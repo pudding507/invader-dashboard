@@ -1459,6 +1459,8 @@ def n601(c, only=None):
     Act = Act[Act.monetId.isin(ids) & (Act.d >= start) & (Act.d <= E)].drop_duplicates()
     Act['grp'] = Act.monetId.map(P.set_index('monetId').grp)
     act_set = set(zip(Act.monetId, Act.d))
+    if only is None:   # 2026-11-04 留存双轨:代理活跃集合和注册日留给埋点会话口径对照(只在全部玩家时)
+        c.n601_act, c.n601_reg = act_set, P.set_index('monetId').reg.to_dict()
     # 2026-10-28 自洽检查用:注册日之前就有活跃痕迹的人(时区或游戏日口径错位时会出现)
     pre = Act[Act.d < Act.monetId.map(P.set_index('monetId').reg)]
     act_before_reg = {'rows': int(len(pre)), 'users': int(pre.monetId.nunique())}
@@ -1749,13 +1751,31 @@ def n601(c, only=None):
         climb.append({'name': label, 'n': int(len(x)), 'city': med(x.city), 'hero': med(x.hero_lv), 'hero_max': int(x.hero_lv.max()) if x.hero_lv.notna().any() else None,
                       'recent': int(len(xr)), 'city_recent': med(xr.city), 'hero_recent': med(xr.hero_lv)})
     hero_marks = [[t, int((P.hero_lv >= t).sum())] for t in (30, 50, 100, 150, 200)]
+    # 主城等级到达(2026-11-04,新手与首日页):当前等级是服务端状态(只知道到没到,不知道哪天到);
+    # 注册当天到 Lv3 用签到记录近似(签到时记了主城等级,没签到的人看不到,是下限)
+    S0 = pd.DataFrame(m.get('N601_activity signin', []))
+    d0lv = {}
+    if len(S0):
+        S0['d'] = pd.to_datetime(S0.signin_at, format='mixed').dt.normalize()
+        S0 = S0.merge(P[['monetId', 'reg']], on='monetId'); S0 = S0[S0.d == S0.reg]
+        d0lv = S0.groupby('monetId').government_level.max().to_dict()
+    def reach(x):
+        sig = [d0lv[m_] for m_ in x.monetId if m_ in d0lv]
+        return {'n': int(len(x)), 'lv2': int((x.city >= 2).sum()), 'lv3': int((x.city >= 3).sum()), 'lv5': int((x.city >= 5).sum()),
+                'd0_signed': len(sig), 'd0_lv3': int(sum(v >= 3 for v in sig))}
+    SRCN = [('fresh', '真新设备'), ('repeat', '同设备重复新号'), ('alt', '老玩家小号'), ('direct', '旧号直接进'), ('noid', '无广告 ID')]
+    city_reach = ([{'key': k_, 'name': nm, **reach(P[P.src == k_])} for k_, nm in SRCN if 'src' in P and (P.src == k_).any()]
+                  + [{'key': 'all', 'name': '全部', **reach(P)}])
     # 两个 App 合计周付费(总纲 6.2):以内测开始日为周起点,往前 8 周是基线(全是老服);601 部分 = 已到账 + PayerMax 待核实
     weeks = []
     for k_ in range(-8, (E - start).days // 7 + 1):
         a0 = start + pd.Timedelta(days=7 * k_); a1 = min(a0 + pd.Timedelta(days=6), E)
         old_ = float(c.O[(c.O.d >= a0) & (c.O.d <= a1)].price.sum())
-        n6 = float(Ok[(Ok.d >= a0) & (Ok.d <= a1)].price.sum())
-        weeks.append({'from': a0.strftime('%Y-%m-%d'), 'to': a1.strftime('%Y-%m-%d'), 'days': (a1 - a0).days + 1, 'old': r(old_, 2), 'n601': r(n6, 2)})
+        wk = Ok[(Ok.d >= a0) & (Ok.d <= a1)]; n6 = float(wk.price.sum())
+        # 2026-11-04(用户需求 5.10):601 拆成确认到账 / 待核实,待核实不并入确认收入
+        n6p = float(wk[wk.status == 'paid'].price.sum()) if 'status' in wk else n6
+        weeks.append({'from': a0.strftime('%Y-%m-%d'), 'to': a1.strftime('%Y-%m-%d'), 'days': (a1 - a0).days + 1, 'old': r(old_, 2), 'n601': r(n6, 2),
+                      'n601_paid': r(n6p, 2), 'n601_other': r(n6 - n6p, 2)})
     base = [w['old'] for w in weeks if w['to'] < N601_START]
     two_app = {'weeks': weeks, 'baseline': r(sum(base) / len(base), 2) if base else None, 'base_weeks': len(base)}
     # 付费
@@ -1857,7 +1877,7 @@ def n601(c, only=None):
                         'checkout': funnel(CK[CK.d >= lo], store[store.d >= lo]) if checkout else None}
     return {'start': N601_START, 'end': E.strftime('%Y-%m-%d'), 'win': win, 'kpi': kpi, 'daily': daily, 'retention': retention, 'cohorts': cohorts,
             'progress': progress, 'levels': levels, 'gameplay': gameplay, 'migration': migration, 'device_groups': device_groups, 'origin': origin_rows, 'whale_entry': whale_entry, 'climb': climb,
-            'hero_marks': hero_marks, 'two_app': two_app, 'guide': guide,
+            'hero_marks': hero_marks, 'two_app': two_app, 'guide': guide, 'city_reach': city_reach,
             'achievements': achievements, 'activities': activities, 'products': products, 'gift_intent': gift_intent, 'payers': payers, 'checkout': checkout,
             'by_channel': [{'ch': x.pay_ch, 'orders': int(x.orders), 'usd': r(x.usd, 2), 'payers': int(x.payers), 'paid': int(x.paid), 'paid_usd': r(x.paid_usd, 2)} for _, x in by_ch.sort_values('usd', ascending=False).iterrows()],
             'excluded': [{'why': x.why, 'orders': int(x.orders), 'usd': r(x.usd, 2), 'users': int(x.users)} for _, x in excluded.iterrows()],
@@ -1926,6 +1946,7 @@ def n601_client(c, N, w=None, seg=None):
     bad = set(E_[E_.user_id.isin(ex)].install_md5)
     raw_rows = len(E_)
     E_ = E_[~E_.install_md5.isin(bad) & (E_.d <= E)]
+    E_all = E_   # 时间筛选前的全量(留存双轨要看全部注册日)
     wlo = E - pd.Timedelta(days=w - 1) if w else pd.Timestamp('2000-01-01')   # 时间筛选:近 w 天
     E_ = E_[E_.d >= wlo]
     if not len(E_):
@@ -2109,6 +2130,29 @@ def n601_client(c, N, w=None, seg=None):
         return tot
     games = {'petquiz': mg(PQ, 'used_diamond', 1, lambda d: d.bet.astype(float).sum(), lambda d: d.reward_diamonds.astype(float).sum()),
              'slot': mg(SL, 'used_ticket', 0, lambda d: d.bet_base.astype(float).sum(), slot_rew)}
+    # 留存双轨(2026-11-04,用户需求 5.4):埋点会话口径 = 当天有 session_start 或 login_ready 且带玩家 ID;只覆盖同意采集的玩家。
+    # 可观测队列 = 注册当天就有埋点的内测玩家;同一批人再用代理口径(活跃痕迹)算一次,两者并列,不互相替代
+    dual = None
+    act_p, regs = getattr(c, 'n601_act', None), getattr(c, 'n601_reg', None)
+    if act_p is not None and regs and not seg:
+        SE = E_all[E_all.event_name.isin(['invader_session_start', 'invader_login_ready']) & E_all.user_id.isin(ids)]
+        ses = set(zip(SE.user_id, SE.d))
+        obs = sorted({u for u, d_ in ses if regs.get(u) is not None and d_ == regs.get(u)})
+        rows_ = []
+        for n_ in (1, 3, 7):
+            base_ = [u for u in obs if regs[u] + pd.Timedelta(days=n_) <= E]
+            hit = lambda S: sum((u, regs[u] + pd.Timedelta(days=n_)) in S for u in base_)
+            k_s, k_p = hit(ses), hit(act_p)
+            rows_.append({'n': n_, 'base': len(base_), 'session': k_s, 'proxy': k_p, 'ci_s': wilson(k_s, len(base_)), 'ci_p': wilson(k_p, len(base_)),
+                          'either': sum(((u, regs[u] + pd.Timedelta(days=n_)) in ses) or ((u, regs[u] + pd.Timedelta(days=n_)) in act_p) for u in base_)})
+        dual = {'obs': len(obs), 'from': SE.d.min().strftime('%Y-%m-%d') if len(SE) else None, 'rows': rows_}
+    # 引导步骤(2026-11-04):B72 起 E023 带 step_id;没有顺序定义表,只按编号列出人数,不当漏斗
+    steps = None
+    T23 = E_[(E_.event_name == 'invader_tutorial_step_completed') & E_.user_id.isin(ids)] if 'step_id' in E_ else E_.iloc[0:0]
+    T23 = T23[T23.step_id.notna()] if len(T23) else T23
+    if len(T23):
+        steps = {'users': int(T23.user_id.nunique()), 'from': T23.d.min().strftime('%Y-%m-%d'),
+                 'rows': [[int(k_), int(v)] for k_, v in T23.groupby('step_id').user_id.nunique().sort_index().items()]}
     # 数据质量
     lr = ready
     dq = {'raw_rows': raw_rows, 'rows': int(len(E_)), 'from': d0.strftime('%Y-%m-%d'), 'last_at': E_.t.max().strftime('%Y-%m-%d %H:%M'),
@@ -2130,7 +2174,8 @@ def n601_client(c, N, w=None, seg=None):
         palace = {'bands': [str(x) for x in tb.columns], 'rows': [[str(d_)[:10]] + [int(v) for v in row] for d_, row in tb.iterrows()]}
     return {'palace_hist': palace, 'coverage': cov, 'startup': startup, 'versions': vers, 'sessions': sess, 'first_day': fd, 'loads': loads, 'fps': fps,
             'reqfail': reqfail, 'exceptions': [[str(k_), int(v)] for k_, v in exc.component.value_counts().items()], 'interrupted': int(len(bi)),
-            'build': build, 'shop': shop, 'pay_chain': pay_chain, 'chain': chain, 'diamonds': dia, 'games': games, 'dq': dq, 'acq': acq}
+            'build': build, 'shop': shop, 'pay_chain': pay_chain, 'chain': chain, 'diamonds': dia, 'games': games, 'dq': dq, 'acq': acq,
+            'ret_dual': dual, 'steps': steps}
 
 
 def n601_segments(c):
