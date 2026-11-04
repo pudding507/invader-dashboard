@@ -24,7 +24,19 @@ log(){ echo "$(date '+%F %T') $*" >> "$LOG"; }
 
 MODE=full; if [ -f "$DONE" ] && [ "$(cat "$DONE")" = "$TODAY" ]; then MODE=light; fi   # 今天完整抓数已成功 → 只做轻量刷新
 if ! mkdir logs/.lock 2>/dev/null; then log "上一次还在跑,跳过"; exit 0; fi       # 防止两次同时跑
-trap 'rmdir logs/.lock 2>/dev/null' EXIT
+# 2026-11-04:代码有改动就提交并推送到 GitHub 私有仓库 pudding507/invader-dashboard。
+#   挂在退出时执行,没连 VPN、抓数失败提前退出也照样推;只提交 .gitignore 以外的文件(密码、玩家数据、页面、备份都不提交);
+#   推送失败只记日志,不影响看板发布。凭据由 ~/.local/bin/gh 提供(git config 里写的是绝对路径)。
+git_sync(){
+  [ -d .git ] || return 0
+  if [ -n "$(git status --porcelain)" ]; then
+    git add -A && git commit -qm "自动提交 $(date '+%F %H:%M')" >> "$LOG" 2>&1 || { log "git 提交失败"; return 0; }
+  fi
+  if [ -n "$(git log origin/main..main --oneline 2>/dev/null)" ]; then
+    GIT_TERMINAL_PROMPT=0 git push -q origin main >> "$LOG" 2>&1 && log "已推送到 GitHub" || log "推送 GitHub 失败(不影响看板)"
+  fi
+}
+trap 'git_sync; rmdir logs/.lock 2>/dev/null' EXIT
 
 for v in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID CF_PAGES_PROJECT; do
   if [ -z "${!v:-}" ]; then log "缺少 $v(写进 ~/.invader_env),退出"; exit 3; fi
