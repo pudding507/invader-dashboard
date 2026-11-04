@@ -999,8 +999,8 @@ function todayCard(scope){
     <tr><td class="l">今天登录过<span class="note"> 角色表只留最后一次登录,没有昨天对照</span></td><td>${fiN(t6.login[0])}</td><td>—</td><td>—</td></tr>
     <tr><td class="l">做过每日任务<span class="note"> 只有日期,没有时刻</span></td><td>${fiN(t6.tasks[0])}</td><td>—</td><td>${fiN(t6.tasks[2])}</td></tr>
     </tbody></table></div>${(T.n601_orders||[]).length ? `<div class="note" style="margin-top:6px">今天订单:${T.n601_orders.map(x => `${x.t} ${x.id} ${esc(x.ch)} ${fm(x.usd,2)}`).join(';')}</div>` : ''}` : `<div class="note">${n6Txt}</div>`;
-  if (scope === 'n601') return `<div class="card"><h3>601 今天(${md(T.day)})截至 ${esc(T.as_of.slice(11))}</h3><div class="sub">白天每 2 小时更新一次(10:30 / 12:30 / 14:30 / 16:30)。今天还没过完,和「昨天同一时刻」比才有意义;只在这里展示,不进下面各块(仍截至 ${md(END)})。只算内测开始后注册、不在排除名单里的角色;今天的充值还没核对到账状态</div>${n6Tbl}</div>`;
-  return `<div class="card"><h3>今天(${md(T.day)})截至 ${esc(T.as_of.slice(11))}</h3><div class="sub">白天每 2 小时更新一次(10:30 / 12:30 / 14:30 / 16:30)。今天还没过完,只在这里展示,和「昨天同一时刻」比才有意义;不进图表、KPI 和告警,下面各块仍截至 ${md(END)}。登录日志是批量写入的,DAU 截至时间可能比更新时间早</div>
+  if (scope === 'n601') return `<div class="card"><h3>601 今天(${md(T.day)})截至 ${esc(T.as_of.slice(11))}</h3><div class="sub">工作时间每 2 小时更新一次(10:10 / 12:10 / 14:10 / 16:10 / 18:10)。今天还没过完,和「昨天同一时刻」比才有意义;只在这里展示,不进下面各块(仍截至 ${md(END)})。只算内测开始后注册、不在排除名单里的角色;今天的充值还没核对到账状态</div>${n6Tbl}</div>`;
+  return `<div class="card"><h3>今天(${md(T.day)})截至 ${esc(T.as_of.slice(11))}</h3><div class="sub">工作时间每 2 小时更新一次(10:10 / 12:10 / 14:10 / 16:10 / 18:10)。今天还没过完,只在这里展示,和「昨天同一时刻」比才有意义;不进图表、KPI 和告警,下面各块仍截至 ${md(END)}。登录日志是批量写入的,DAU 截至时间可能比更新时间早</div>
    ${oldTbl}<div class="note" style="font-size:13px;margin-top:6px">${n6Txt}</div></div>`;
 }
 
