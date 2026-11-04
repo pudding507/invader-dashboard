@@ -1512,7 +1512,10 @@ def n601(c, only=None):
     s_sw, x = ids_of('N601_sweep', 'attacker_id')
     feats.append(('扫荡', s_sw, f"{len(x[x.attacker_id.isin(ids)])} 个 攻方 × 城主 组合"))
     s_ab, xb = ids_of('N601_arena battles', 'attacker_id')
-    s_ap, xa = ids_of('N601_arena players', 'monetId', lambda d: d.score != 1000)
+    # 2026-11-04 改:「打过竞技场」原按 score != 1000 判,和「新人前 7 天」那处(lastTime 不是 1900)不一致,统一成 lastTime。
+    # 原因:解锁时自动建行,积分 1000、lastTime 1900 占位;打过又回到 1000 分的人会被积分判法漏掉。
+    # 影响:11-04 全表非机器人 238 行,积分判法 14 人,lastTime 判法 54 人;再并上对战表攻方。用户 11-04 确认。
+    s_ap, xa = ids_of('N601_arena players', 'monetId', lambda d: ~d.last_at.astype(str).str[:4].isin(['', '1900', 'None', 'NaT', 'nan']))
     s_open, _ = ids_of('N601_arena players', 'monetId')
     feats.append(('竞技场', s_ab | s_ap, f"开启竞技场 {len(s_open)} 人;对战记录只留近期 {len(xb)} 场"))
     s_wb, xw = ids_of('N601_world boss', 'monetId')
