@@ -308,8 +308,28 @@ function ratio(rows, a, b){ const d = sum(rows.map(r => r[b])); return d ? sum(r
 const rangeDays = () => ({7:30, 14:45, 30:90, 90:120}[S.w] || 90);
 
 // ---------- 图表
+// 2026-11-04 601 版本 / 投放 / 活动日历(D.n601_events):趋势图按天标出。活动 = 浅金色底,单日事件(发版、开投)= 虚线
+function evPlugin(dates){
+  const wins = [];
+  (D.n601_events || []).filter(e => e.start).forEach(e => (e.windows || [[e.start, e.end]]).forEach((w, k) =>
+    wins.push({name:e.name, kind:e.kind, a:w[0].slice(0,10), b:(w[1] || w[0]).slice(0,10), point:!w[1], first:k === 0})));
+  return {id:'evb', beforeDatasetsDraw(ch){
+    if (!dates || !dates.length) return;
+    const xs = ch.scales.x, a = ch.chartArea, g = ch.ctx, step = dates.length > 1 ? xs.getPixelForValue(1) - xs.getPixelForValue(0) : 20;
+    let row = 0; g.save(); g.font = '10px ' + css('--font-ui');
+    wins.forEach(w => {
+      const i0 = dates.findIndex(d => d >= w.a); let j1 = -1; dates.forEach((d, i) => { if (d <= w.b) j1 = i; });
+      if (i0 < 0 || j1 < i0) return;
+      const x0 = xs.getPixelForValue(i0) - step / 2, x1 = xs.getPixelForValue(j1) + step / 2;
+      if (w.point) { g.strokeStyle = css('--muted'); g.setLineDash([3,3]); g.beginPath(); g.moveTo(x0, a.top); g.lineTo(x0, a.bottom); g.stroke(); g.setLineDash([]); }
+      else { g.fillStyle = 'rgba(201,150,40,0.12)'; g.fillRect(x0, a.top, x1 - x0, a.bottom - a.top); }
+      if (w.first) { g.fillStyle = css('--muted'); g.fillText(w.name, x0 + 3, a.top + 10 + (row++ % 3) * 11); }
+    });
+    g.restore(); }};
+}
 function mkChart(id, cfg){
   const el = $(id); if (!el) return;
+  if (cfg.evDates) { cfg.plugins = (cfg.plugins || []).concat([evPlugin(cfg.evDates)]); delete cfg.evDates; }
   const ink = css('--muted'), grid = css('--grid');
   cfg.options = Object.assign({responsive:true, maintainAspectRatio:false, animation:false, interaction:{mode:'index', intersect:false},
     plugins:{legend:{labels:{color:ink, boxWidth:10, boxHeight:10, font:{size:11}}}, tooltip:{}}}, cfg.options||{});
@@ -729,13 +749,18 @@ function n601Page(part){
    <div class="tw"><table><thead><tr><th>周</th><th>天数</th><th>老服</th><th>601</th><th>合计</th><th>比基线</th></tr></thead><tbody>${TA.weeks.map(w => { const t = w.old + w.n601, b = TA.baseline * w.days / 7; return `<tr${w.from >= N.start ? ' style="font-weight:600"' : ''}><td>${md(w.from)} ~ ${md(w.to)}</td><td>${w.days}</td><td>${fm(w.old)}</td><td>${w.n601 ? fm(w.n601) : '—'}</td><td>${fm(t)}</td><td>${sgn(dpct(t, b))}</td></tr>`; }).join('')}</tbody></table></div>
    <div class="note">不足 7 天的周,「比基线」按天数折算。评分、卡顿、支付失败数库里没有,暂不能并列</div></div>` : ''}`;
   const EV = n6ev(V);
-  const PARTS = {n601:[sToday, sBanner, sKpi, EV.chain, sScale, sTA], n6tech:[sBanner, EV.tech], n6new:[sBanner, EV.sess, EV.first, sOrigin, sRet],
+  // 版本 / 投放 / 活动日历(2026-11-04):读趋势时当切点;趋势图上同样标出
+  const thru = D.meta.data_through || '';
+  const evState = (e) => !e.start ? '时间未定' : (e.end ? (thru >= e.end.slice(0,10) ? '已结束' : thru >= e.start.slice(0,10) ? '进行中' : '未开始') : (thru >= e.start.slice(0,10) ? '已发生' : '未到'));
+  const sCal = (D.n601_events || []).length ? `<h2>版本、投放与活动</h2><div class="card"><div class="sub">时间是中国 / 新加坡时间;状态按数据截至日 ${esc(thru)} 判断。活动开始后以数据为准核对是否真的开了。趋势图上:活动 = 浅金色底,发版和投放变化 = 虚线</div>
+   <div class="tw"><table><thead><tr><th>类型</th><th>名称</th><th>时间</th><th>状态</th><th>说明</th></tr></thead><tbody>${D.n601_events.map(e => `<tr><td>${esc(e.kind)}</td><td class="l">${esc(e.name)}</td><td class="l">${e.start ? esc(e.start) + (e.end ? ' ~ ' + esc(e.end) : '') : '—'}</td><td>${evState(e)}</td><td class="l note">${esc(e.note || '')}</td></tr>`).join('')}</tbody></table></div></div>` : '';
+  const PARTS = {n601:[sToday, sBanner, sKpi, sCal, EV.chain, sScale, sTA], n6tech:[sBanner, EV.tech], n6new:[sBanner, EV.acq, EV.sess, EV.first, sOrigin, sRet],
                  n6grow:[sBanner, EV.palace, sGrow, EV.build, EV.games], n6pay:[sBanner, sPay, EV.shop, EV.dia], n6dq:[EV.dq]};
   $('root').innerHTML = `<section id="sec-${part}">${PARTS[part].join('\n')}</section>`;
   const lab = dl.map(r => md(r.d)), acc = css('--accent'), gold = css('--gold'), slate = css('--slate');
   const stack = {x:{stacked:true}, y:{stacked:true, beginAtZero:true}};
-  mkChart('c-n6reg', {type:'bar', data:{labels:lab, datasets:[{label:'新建号', data:dl.map(r=>r.reg_new), backgroundColor:acc, borderRadius:3}, {label:'老服账号', data:dl.map(r=>r.reg_old), backgroundColor:gold, borderRadius:3}]}, options:{scales:stack}});
-  mkChart('c-n6act', {type:'bar', data:{labels:lab, datasets:[{label:'新建号', data:dl.map(r=>r.act_new), backgroundColor:acc, borderRadius:3}, {label:'老服账号', data:dl.map(r=>r.act_old), backgroundColor:gold, borderRadius:3}]}, options:{scales:stack}});
+  mkChart('c-n6reg', {evDates:dl.map(r=>r.d), type:'bar', data:{labels:lab, datasets:[{label:'新建号', data:dl.map(r=>r.reg_new), backgroundColor:acc, borderRadius:3}, {label:'老服账号', data:dl.map(r=>r.reg_old), backgroundColor:gold, borderRadius:3}]}, options:{scales:stack}});
+  mkChart('c-n6act', {evDates:dl.map(r=>r.d), type:'bar', data:{labels:lab, datasets:[{label:'新建号', data:dl.map(r=>r.act_new), backgroundColor:acc, borderRadius:3}, {label:'老服账号', data:dl.map(r=>r.act_old), backgroundColor:gold, borderRadius:3}]}, options:{scales:stack}});
   if (M) { const mg = M.daily, si = mg.findIndex(r => r.n601 != null);
     mkChart('c-n6mig', {type:'line', data:{labels:mg.map(r => md(r.d)), datasets:[
       {label:'在老服登录', data:mg.map(r => r.old_server), borderColor:slate, borderWidth:2, pointRadius:2},
@@ -758,7 +783,7 @@ function n601Page(part){
 // ================= 601 埋点与全链路(2026-11-03,第一期)
 function n6ev(V){
   const none = '<div class="card"><div class="empty">埋点数据这次没有取到</div></div>';
-  if (!V) return {chain:'', tech:none, sess:'', first:'', palace:'', build:'', games:'', shop:'', dia:'', dq:none, charts(){}};
+  if (!V) return {chain:'', tech:none, sess:'', first:'', palace:'', build:'', games:'', shop:'', dia:'', dq:none, acq:'', charts(){}};
   const pc = (k, n) => n ? `${fp(k / n, 0)}<span class="note"> ${fi(k)}/${fi(n)}</span>` : '—';
   const sec = (x) => x == null ? '—' : x + ' 秒';
   const bars = (rows, top) => `<div class="funnel">` + rows.map((x, i) => `<div class="fr"><span>${esc(x[0])}</span><div class="fb" style="width:${Math.max(0.4, (x[1] || 0) / (top || 1) * 100)}%"></div><span class="n">${x[1] == null ? '待接入' : fi(x[1]) + (i ? ` · 本步 ${rows[i-1][1] ? fp(x[1] / rows[i-1][1], 0) : '—'}` : '')}</span></div>`).join('') + `</div>`;
@@ -802,6 +827,14 @@ function n6ev(V){
     <div class="tw"><table><thead><tr><th>模块</th><th>次数</th></tr></thead><tbody>${V.exceptions.map(x => `<tr><td class="l">${esc(x[0])}</td><td>${fi(x[1])}</td></tr>`).join('') || '<tr><td colspan="2">无</td></tr>'}</tbody></table></div></div>
   </div>`;
   // 会话
+  // 获客来源(2026-11-04):B72 起首次启动带安装来源;只覆盖同意采集的玩家
+  const A = V.acq;
+  const acq = `<h2>获客来源</h2>` + (A ? `
+  <div class="grid">
+   <div class="card"><h3>新安装按来源 · 每天</h3><div class="sub">Google Play 安装来源(埋点 session_start 的 install_referrer,每个安装取第一次);${esc(A.from)} 起(B72 / 2.4.0053 才开始带)</div><div class="chart"><canvas id="c-n6acq"></canvas></div></div>
+   <div class="card"><h3>各来源合计</h3><div class="tw"><table><thead><tr><th>来源</th><th>新安装</th><th>其中登录成为 601 角色</th></tr></thead><tbody>${A.total.map(x => `<tr><td class="l">${esc(x.src)}</td><td>${fi(x.installs)}</td><td>${pc(x.roles, x.installs)}</td></tr>`).join('')}</tbody></table></div>
+    <div class="note">B72 及以后版本有 session_start 的安装 ${fi(A.b72_installs)} 个,其中带安装来源的 ${fi(A.with_ref)} 个(只在首次启动上报,重装、升级不报)。只有同意采集的玩家才上报,是下限;iOS 没有这个字段。账号库的广告 ID 记录 11-04 开投后 601 新号仍为 0,所以来源暂以这里为准</div></div>
+  </div>` : `<div class="card"><div class="empty">还没有安装来源数据:B72(2.4.0053)11-04 发版后才开始上报,数据截至日到 11-04 以后会出现</div></div>`);
   const sess = `<h2>会话与活跃时段</h2>
   <div class="grid">
    <div class="card"><h3>单次会话时长</h3><div class="sub">登录后的会话(内测玩家),切到后台或退出算一次结束;中位数 ${sec(SS.p50)},75% 分位 ${sec(SS.p75)},90% 分位 ${sec(SS.p90)}(共 ${fi(SS.n)} 次)</div><div class="chart"><canvas id="c-n6sess"></canvas></div></div>
@@ -854,6 +887,8 @@ function n6ev(V){
     <tr><td class="l">国家</td><td class="l">几乎全是「Old mobile version」,不可用</td></tr>
     <tr><td class="l">商品资格、目录版本(E075 / E076)</td><td class="l">资格全空;目录版本全是 unknown</td></tr>
     <tr><td class="l">事件时间</td><td class="l">部分手机时钟不准(有落在未来一周的);看板一律用服务器收件时间</td></tr>
+    <tr><td class="l">去重(event_uuid)</td><td class="l">数仓不去重。带 uuid 的 ${fi(Q.uuid_rows)} 行里重复 ${fi(Q.dup_rows)} 行,已去掉;B72 之前的版本不带 uuid(${fi(Q.no_uuid_rows)} 行),没法精确去重</td></tr>
+    <tr><td class="l">服号为空</td><td class="l">不只是登录前事件:商店打开、商品曝光等登录后事件也常没有服号,看板按玩家 ID 认角色,不按服号</td></tr>
    </tbody></table></div></div>
    <div class="card"><h3>各事件条数</h3><div class="tw" style="max-height:320px"><table><thead><tr><th>事件</th><th>条数</th></tr></thead><tbody>${Q.events.map(x => `<tr><td class="l">${esc(x[0].replace('invader_',''))}</td><td>${fi(x[1])}</td></tr>`).join('')}</tbody></table></div>
     <div class="note">过滤规则:只取 app_source = INVADER(去掉混进来的 Looba 事件)、服号为空(登录前)或 601(去掉测试服 1、3);出现过排除名单账号的安装整条去掉(${fi(Q.test_installs)} 个)</div></div>
@@ -862,18 +897,18 @@ function n6ev(V){
     const acc = css('--accent'), gold = css('--gold'), slate = css('--slate'), vio = css('--violet'), good = css('--good'), bad = css('--bad'), soft = css('--accent-soft');
     const stack = {x:{stacked:true}, y:{stacked:true, beginAtZero:true}};
     const sd = S.daily.filter(r => r.resources || r.failed);
-    mkChart('c-n6st', {type:'bar', data:{labels:sd.map(r => md(r.d)), datasets:[{label:'资源准备完成', data:sd.map(r => r.resources), backgroundColor:soft, borderColor:acc, borderWidth:1, borderRadius:3},
+    mkChart('c-n6st', {evDates:sd.map(r=>r.d), type:'bar', data:{labels:sd.map(r => md(r.d)), datasets:[{label:'资源准备完成', data:sd.map(r => r.resources), backgroundColor:soft, borderColor:acc, borderWidth:1, borderRadius:3},
       {label:'登录成功', data:sd.map(r => r.ready), backgroundColor:acc, borderRadius:3}, {label:'启动失败', data:sd.map(r => r.failed), backgroundColor:bad, borderRadius:3}]}, options:{scales:{x:{}, y:{beginAtZero:true}}}});
     const pal = [bad, gold, slate, acc, good];
     const ft = V.fps.by_tier.filter(x => x.n >= 5);
     mkChart('c-n6fpst', {type:'bar', data:{labels:ft.map(x => `${x.name}(${x.n})`), datasets:V.fps.labels.map((l, i) => ({label:l + ' 帧', data:ft.map(x => x.n ? x.b[i] / x.n : 0), backgroundColor:pal[i]}))},
       options:{indexAxis:'y', scales:{x:{stacked:true, max:1, ticks:{callback:(v) => Math.round(v*100) + '%'}}, y:{stacked:true}}, plugins:{tooltip:{callbacks:{label:(c) => `${c.dataset.label}:${fp(c.raw,0)}`}}}}});
     const rd = V.reqfail.daily.filter(r => Object.values(r).some(v => typeof v === 'number' && v > 0)), rk = ['账号登录', '主城初始化', '支付', '充值领奖'];
-    mkChart('c-n6req', {type:'bar', data:{labels:rd.map(r => md(r.d)), datasets:rk.map((k, i) => ({label:k, data:rd.map(r => r[k]), backgroundColor:[acc, slate, bad, gold][i]}))}, options:{scales:stack}});
+    mkChart('c-n6req', {evDates:rd.map(r=>r.d), type:'bar', data:{labels:rd.map(r => md(r.d)), datasets:rk.map((k, i) => ({label:k, data:rd.map(r => r[k]), backgroundColor:[acc, slate, bad, gold][i]}))}, options:{scales:stack}});
     mkChart('c-n6sess', {type:'bar', data:{labels:SS.dist.map(x => x[0]), datasets:[{label:'会话数', data:SS.dist.map(x => x[1]), backgroundColor:acc, borderRadius:3}]}, options:{plugins:{legend:{display:false}}, scales:{x:{}, y:{beginAtZero:true}}}});
     mkChart('c-n6hour', {type:'bar', data:{labels:SS.hours.map(x => x[0] + '点'), datasets:[{label:'玩家人数(按小时去重后相加)', data:SS.hours.map(x => x[1]), backgroundColor:acc, borderRadius:3}]}, options:{plugins:{legend:{display:false}}, scales:{x:{}, y:{beginAtZero:true}}}});
     const md_ = SS.daily.filter(r => r.users);
-    mkChart('c-n6min', {data:{labels:md_.map(r => md(r.d)), datasets:[{type:'bar', label:'有会话的人', data:md_.map(r => r.users), backgroundColor:soft, borderColor:acc, borderWidth:1, yAxisID:'y1', borderRadius:3},
+    mkChart('c-n6min', {evDates:md_.map(r=>r.d), data:{labels:md_.map(r => md(r.d)), datasets:[{type:'bar', label:'有会话的人', data:md_.map(r => r.users), backgroundColor:soft, borderColor:acc, borderWidth:1, yAxisID:'y1', borderRadius:3},
       {type:'line', label:'每人时长中位数(分钟)', data:md_.map(r => r.min_p50), borderColor:gold, borderWidth:2, pointRadius:2, yAxisID:'y'},
       {type:'line', label:'每人时长平均(分钟)', data:md_.map(r => r.min_mean), borderColor:vio, borderWidth:1.5, borderDash:[4,3], pointRadius:0, yAxisID:'y'}]},
       options:{scales:{x:{}, y:{beginAtZero:true, position:'left'}, y1:{beginAtZero:true, position:'right', grid:{display:false}}}}});
@@ -881,15 +916,17 @@ function n6ev(V){
     if (PH) { const cols = [slate, soft, acc, gold, good];
       mkChart('c-n6ph', {type:'bar', data:{labels:PH.rows.map(r => md(r[0])), datasets:PH.bands.map((b, i) => ({label:'主城 ' + b, data:PH.rows.map(r => r[i+1]), backgroundColor:cols[i], borderColor:acc, borderWidth:i === 1 ? 1 : 0}))}, options:{scales:stack}}); }
     if (G.petquiz || G.slot) { const pd = (G.petquiz || G.slot).daily, i0 = pd.findIndex((r, i) => r.rounds || ((G.slot||{}).daily||[])[i]?.rounds), dd = i0 < 0 ? pd : pd.slice(i0);
-      mkChart('c-n6gm', {type:'bar', data:{labels:dd.map(r => md(r.d)), datasets:[{label:'宠物竞猜(人)', data:dd.map(r => r.users), backgroundColor:acc, borderRadius:3},
+      mkChart('c-n6gm', {evDates:dd.map(r=>r.d), type:'bar', data:{labels:dd.map(r => md(r.d)), datasets:[{label:'宠物竞猜(人)', data:dd.map(r => r.users), backgroundColor:acc, borderRadius:3},
         {label:'老虎机(人)', data:G.slot ? G.slot.daily.slice(i0 < 0 ? 0 : i0).map(r => r.users) : [], backgroundColor:gold, borderRadius:3}]}, options:{scales:{x:{}, y:{beginAtZero:true, ticks:{precision:0}}}}}); }
     const shd = SH.daily.filter(r => r.ev_users);
-    mkChart('c-n6shop', {type:'bar', data:{labels:shd.map(r => md(r.d)), datasets:[{label:'埋点里的内测玩家', data:shd.map(r => r.ev_users), backgroundColor:soft, borderColor:acc, borderWidth:1, borderRadius:3}, {label:'其中打开过商店', data:shd.map(r => r.open_users), backgroundColor:acc, borderRadius:3}]}, options:{scales:{x:{}, y:{beginAtZero:true}}}});
+    mkChart('c-n6shop', {evDates:shd.map(r=>r.d), type:'bar', data:{labels:shd.map(r => md(r.d)), datasets:[{label:'埋点里的内测玩家', data:shd.map(r => r.ev_users), backgroundColor:soft, borderColor:acc, borderWidth:1, borderRadius:3}, {label:'其中打开过商店', data:shd.map(r => r.open_users), backgroundColor:acc, borderRadius:3}]}, options:{scales:{x:{}, y:{beginAtZero:true}}}});
     if (DI) mkChart('c-n6dia', {type:'bar', data:{labels:DI.dist.map(x => x[0] + ' 钻'), datasets:[{label:'人数', data:DI.dist.map(x => x[1]), backgroundColor:gold, borderRadius:3}]}, options:{plugins:{legend:{display:false}}, scales:{x:{}, y:{beginAtZero:true}}}});
-    mkChart('c-n6cov', {data:{labels:cv.map(x => md(x.d)), datasets:[{type:'bar', label:'看板活跃', data:cv.map(x => x.act), backgroundColor:soft, borderColor:acc, borderWidth:1, borderRadius:3},
+    if (A) { const ad = A.daily, cl = [acc, vio, good, slate, gold];
+      mkChart('c-n6acq', {evDates:ad.map(r=>r.d), type:'bar', data:{labels:ad.map(r => md(r.d)), datasets:A.srcs.map((s_, i) => ({label:s_, data:ad.map(r => r[s_]), backgroundColor:cl[i], borderRadius:3}))}, options:{scales:stack}}); }
+    mkChart('c-n6cov', {evDates:cv.map(x=>x.d), data:{labels:cv.map(x => md(x.d)), datasets:[{type:'bar', label:'看板活跃', data:cv.map(x => x.act), backgroundColor:soft, borderColor:acc, borderWidth:1, borderRadius:3},
       {type:'bar', label:'埋点里的内测玩家', data:cv.map(x => x.ev_users), backgroundColor:acc, borderRadius:3}]}, options:{scales:{x:{}, y:{beginAtZero:true}}}});
   }
-  return {chain, tech, sess, first, palace, build, games, shop, dia, dq, charts};
+  return {chain, tech, sess, first, palace, build, games, shop, dia, dq, acq, charts};
 }
 const N6ST = [['resources','资源准备'], ['account_version','账号 / 版本检查'], ['connection','连接游戏服'], ['city_initialization','主城初始化']];
 const N6DONE = {free:'免费立即完成', natural:'自然计时完成', diamond:'花钻石', card:'加速卡'};

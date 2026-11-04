@@ -1325,6 +1325,22 @@ def top_problems(c, DATA):
 # - 老服账号 = monetId < 2,110,000(用旧号直接进 601);新建号 = 其余。新建号里也有老玩家换设备 / 建小号,这里分不出
 # - 充值:Google / Apple 订单按 New Era 支付表判断到账(2026-11-03 起);PayerMax 网页支付没有状态记录,仍是「待核实」
 N601_START = '2026-10-13'              # 内测开始;之前是支付联调期,注册和订单都不算
+# 601 版本、投放、活动日历(2026-11-04 加,用户确认):趋势图上按天标出,读数时当切点。时间都是新加坡 / 中国时间(UTC+8)。
+# 来源:B72 更新说明截图(invader/参考资料/版本说明/)、用户口述(投放)。活动开始后要按数据确认真的开了。
+def _carnival_weeks():
+    out, d = [], pd.Timestamp('2026-11-06 05:00')
+    while d < pd.Timestamp('2026-12-31'):
+        out.append([d.strftime('%Y-%m-%d %H:%M'), (d + pd.Timedelta(days=5)).strftime('%Y-%m-%d %H:%M')]); d += pd.Timedelta(days=7)
+    return out
+N601_EVENTS = [
+    {'kind': '投放', 'name': '新 App 停投(约)', 'start': '2026-10-24', 'end': None, 'note': '用户口述,日期是大约;老 App 一直在投'},
+    {'kind': '版本', 'name': 'B72(2.4.0053)发版', 'start': '2026-11-04', 'end': None, 'note': '依赖服务端构建 56;带 event_uuid、install_referrer 等新字段'},
+    {'kind': '投放', 'name': '601 重新开投', 'start': '2026-11-04', 'end': None, 'note': '用户口述'},
+    {'kind': '活动', 'name': '消费嘉年华', 'start': '2026-11-06 05:00', 'end': '2026-12-31', 'windows': _carnival_weeks(), 'note': '每周五 05:00 至下周三 05:00,持续到 12 月'},
+    {'kind': '活动', 'name': '充值返利(百分百分红)', 'start': '2026-11-06 05:00', 'end': '2026-11-07 05:00', 'note': '只开这一次'},
+    {'kind': '活动', 'name': '英雄升级', 'start': '2026-11-14 03:00', 'end': '2027-01-04 02:59', 'windows': [['2026-11-14 03:00', '2026-11-21 02:59']], 'note': '第一期 11-14 03:00 ~ 11-21 02:59,之后每 11 天一期'},
+    {'kind': '道具', 'name': '限时票 1,500 张(5 位指定玩家)', 'start': None, 'end': None, 'note': '7 天有效,需单独发放,发放时间未定;读券数据时单列'},
+]
 N6_WINDOWS = (1, 7, 14, 30)            # 2026-11-03:601 各页的时间筛选;近 1 天 = 数据截至日全天(中国时间)
 # 2026-10-28 排除名单改为读 data/exclusions.json(所有报表共用一份);文件缺失或损坏时退回下面这份测试号
 EXCLUSIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'exclusions.json')
@@ -1892,6 +1908,13 @@ def n601_client(c, N, w=None, seg=None):
     if seg:   # 平台 / 版本按事件本身的字段筛;国家按「这个安装登录过的号属于该国家」筛
         P = P[P.monetId.isin(seg[2])]
     ids = set(P.monetId)
+    # 2026-11-04:按 event_uuid 去重(数仓链路不去重;B72 之前的版本没有 uuid,这部分保留原样,不能精确去重)
+    uuid_rows = no_uuid_rows = dup_rows = None
+    if 'event_uuid' in E_:
+        hu = E_.event_uuid.notna() & (E_.event_uuid.astype(str) != '')
+        uuid_rows, no_uuid_rows = int(hu.sum()), int((~hu).sum())
+        dup_rows = uuid_rows - int(E_.loc[hu, 'event_uuid'].nunique())
+        E_ = pd.concat([E_[hu].drop_duplicates('event_uuid'), E_[~hu]], ignore_index=True)
     E_['t'] = pd.to_datetime(E_.server_time, format='mixed') + pd.Timedelta(hours=8)
     if seg and seg[0] == 'p':
         E_ = E_[E_.platform == {'Android': 1, 'iOS': 2}[seg[1]]]
@@ -1909,6 +1932,29 @@ def n601_client(c, N, w=None, seg=None):
         return None
     U = E_[E_.user_id.isin(ids)]
     ev = lambda name: E_[E_.event_name == name]
+    # 获客来源(2026-11-04,用户确认):B72 起 session_start 首次启动带 install_referrer(Google Play 安装来源原文)。
+    # 按安装取最早一条,原文只在这里归成类别,不进页面;安装后登录过的内测玩家算「成为 601 角色」。只覆盖同意采集的玩家,是下限。
+    acq = None
+    if 'install_referrer' in E_:
+        def ref_src(x):
+            x = str(x).lower()
+            if 'facebook' in x: return 'Facebook'
+            if 'instagram' in x: return 'Instagram'
+            if 'organic' in x or 'google-play' in x: return '自然量'
+            if 'not%20set' in x or 'not set' in x: return '未设置'
+            return '其他'
+        SS_ = E_[E_.event_name == 'invader_session_start']
+        R_ = SS_[SS_.install_referrer.notna() & (SS_.install_referrer.astype(str) != '')].sort_values('t').drop_duplicates('install_md5')
+        if len(R_):
+            R_ = R_.assign(src=R_.install_referrer.map(ref_src))
+            inst_user = E_[E_.user_id.isin(ids)].groupby('install_md5').user_id.first()
+            R_['user'] = R_.install_md5.map(inst_user)
+            SRCS = ['Facebook', 'Instagram', '自然量', '未设置', '其他']
+            b72 = SS_[SS_.client_version >= '2.4.0053']
+            acq = {'srcs': SRCS, 'from': R_.d.min().strftime('%Y-%m-%d'),
+                   'total': [{'src': s_, 'installs': int((R_.src == s_).sum()), 'roles': int(R_[R_.src == s_].user.nunique())} for s_ in SRCS],
+                   'daily': [{'d': d_.strftime('%Y-%m-%d'), **{s_: int(((R_.d == d_) & (R_.src == s_)).sum()) for s_ in SRCS}} for d_ in pd.date_range(R_.d.min(), E)],
+                   'b72_installs': int(b72.install_md5.nunique()), 'with_ref': int(len(R_))}
     q = lambda s, p: r(float(s.quantile(p)), 1) if len(s) else None
     d0 = E_.d.min()
     days = pd.date_range(d0, E)
@@ -2071,7 +2117,8 @@ def n601_client(c, N, w=None, seg=None):
           'platform': {('安卓' if k_ == 1 else 'iOS' if k_ == 2 else '未知'): int(v) for k_, v in E_.platform.value_counts().items()},
           'existing_null': r(float(lr.is_existing_account.isna().mean()), 3) if len(lr) else None,
           'guide_ids': sorted(int(x) for x in ev('invader_tutorial_step_completed').guide_id.dropna().unique()),
-          'login_methods': {str(k_): int(v) for k_, v in lr.login_method.value_counts().items()}}
+          'login_methods': {str(k_): int(v) for k_, v in lr.login_method.value_counts().items()},
+          'uuid_rows': uuid_rows, 'no_uuid_rows': no_uuid_rows, 'dup_rows': dup_rows}
     # 主城等级按天(旧后台每日快照,含测试号和内测前角色)
     PH = pd.DataFrame(m.get('N601_portal palace daily', []))
     palace = None
@@ -2083,7 +2130,7 @@ def n601_client(c, N, w=None, seg=None):
         palace = {'bands': [str(x) for x in tb.columns], 'rows': [[str(d_)[:10]] + [int(v) for v in row] for d_, row in tb.iterrows()]}
     return {'palace_hist': palace, 'coverage': cov, 'startup': startup, 'versions': vers, 'sessions': sess, 'first_day': fd, 'loads': loads, 'fps': fps,
             'reqfail': reqfail, 'exceptions': [[str(k_), int(v)] for k_, v in exc.component.value_counts().items()], 'interrupted': int(len(bi)),
-            'build': build, 'shop': shop, 'pay_chain': pay_chain, 'chain': chain, 'diamonds': dia, 'games': games, 'dq': dq}
+            'build': build, 'shop': shop, 'pay_chain': pay_chain, 'chain': chain, 'diamonds': dia, 'games': games, 'dq': dq, 'acq': acq}
 
 
 def n601_segments(c):
@@ -2559,6 +2606,7 @@ def build(raw):
     DATA['rev_func'] = safe(lambda: revenue_by_function(c), errors, 'rev_func')
     DATA['today'] = safe(lambda: today_live(c), errors, 'today')
     DATA['n601'] = safe(lambda: n601(c), errors, 'n601')
+    DATA['n601_events'] = N601_EVENTS
     DATA['n601_ev'] = {str(w_): safe(lambda w_=w_: n601_client(c, DATA['n601'], w_), errors, f'n601_ev_{w_}') for w_ in N6_WINDOWS}
     DATA['n601_seg'] = safe(lambda: n601_by_segment(c, errors), errors, 'n601_seg')
     if DATA['n601'] and DATA['n601'].get('exclusions_error'):
