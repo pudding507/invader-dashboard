@@ -173,11 +173,11 @@ td.l{text-align:left;white-space:normal}
     <div class="head"><h1>__TITLE__</h1><span class="stamp" id="stamp"></span></div>
     <nav class="tabs" role="tablist" id="tabs">
       <button role="tab" data-tab="n601" id="t-n601">601 总览</button>
-      <button role="tab" data-tab="n6tech" id="t-n6tech">启动与技术</button>
-      <button role="tab" data-tab="n6new" id="t-n6new">新手与留存</button>
+      <button role="tab" data-tab="n6tech" id="t-n6tech">获客与进入</button>
+      <button role="tab" data-tab="n6new" id="t-n6new">留存与活跃</button>
       <button role="tab" data-tab="n6grow" id="t-n6grow">成长与玩法</button>
       <button role="tab" data-tab="n6pay" id="t-n6pay">付费</button>
-      <button role="tab" data-tab="n6dq" id="t-n6dq">数据质量</button>
+      <button role="tab" data-tab="n6dq" id="t-n6dq">技术与数据</button>
       <span class="sep" aria-hidden="true"></span>
       <button role="tab" data-tab="old" id="t-old">老服</button>
       <button role="tab" data-tab="defs" id="t-defs">口径</button>
@@ -640,21 +640,26 @@ function n601Page(part){
   const tw = TA ? TA.weeks.filter(w => w.from >= N.start) : [];
   const V = SEG && part !== 'n6dq' ? SEG.ev[S.w6] : (D.n601_ev || {})[S.w6];   // 数据质量页始终是全部玩家
   const sToday = SEG ? '' : todayCard('n601');   // 今天实时只有全部玩家
-  const sBanner = `<div class="banner">${segTxt ? `<b>${esc(segTxt)}</b>两个 App 合计、今天实时、埋点数据质量仍是全部玩家。<br>` : ''}601 是新版内测服,口径和其他页不同:<b>活跃</b>用每日任务、签到、付款、登录等痕迹代替(新版不写老版登录日志,会漏掉什么都没留下的人);<b>充值</b>:Google / Apple 订单按 New Era 支付表判断到账(商店确认扣款、奖励已发放;商店测试购买和退款已剔除),PayerMax 网页支付还没有状态记录,仍是「待核实」;金额是两者合计。只统计 ${esc(N.start)} 内测开始后注册的角色,已去掉测试号;时间都是中国时间。${V ? '「启动与技术」等页的客户端数据来自埋点,只有同意采集的玩家才上报,人数是下限。' : ''}</div>`;
+  const sBanner = `<div class="banner">${segTxt ? `<b>${esc(segTxt)}</b>两个 App 合计、今天实时、埋点数据质量仍是全部玩家。<br>` : ''}601 是新版内测服,口径和其他页不同:<b>活跃</b>用每日任务、签到、付款、登录等痕迹代替(新版不写老版登录日志,会漏掉什么都没留下的人);<b>充值</b>:Google / Apple 订单按 New Era 支付表判断到账(商店确认扣款、奖励已发放;商店测试购买和退款已剔除),PayerMax 网页支付还没有状态记录,仍是「待核实」;金额是两者合计。只统计 ${esc(N.start)} 内测开始后注册的角色,已去掉测试号;时间都是中国时间。${V ? '「获客与进入」等页的客户端数据来自埋点,只有同意采集的玩家才上报,人数是下限。' : ''}</div>`;
   const VS = V ? V.startup.total : null, VU = V ? V.sessions.user_day : null, VC = V ? V.coverage.filter(x => x.act).slice(-1)[0] : null;
-  const sKpi = `<div class="kpis">
-   ${kpiCard({label:'内测玩家', val:fi(k.players), lines:[`老服账号 ${fi(k.old)} · 新建号 ${fi(k.new)}`, `近 ${S.w6} 天新增 ${fi(WN.reg)}(其中老服账号 ${fi(WN.reg_old)})`]})}
-   ${kpiCard({label:`活跃 · 近 ${S.w6} 天`, val:fi(WN.act), lines:[`按人去重;其中老服账号 ${fi(WN.act_old)}`, `${md(N.end)} 当天 ${fi(k.act_yday)} · 单日峰值 ${fi(k.act_peak)}`]})}
-   ${kpiCard({label:'D1 留存(全部内测期间)', val:fp(R.all.d1.rate,0), lines:[`${R.all.d1.n}/${R.all.d1.base} 人`, `D7 ${fp(R.all.d7.rate,0)}(${R.all.d7.n}/${R.all.d7.base})`]})}
-   ${kpiCard({label:'新用户(全新设备)', val:fi((N.origin||[]).find(o => o.key==='new')?.n), lines:[`其余为回流用户或无法判断`, `见「用户来源」`]})}
-   ${kpiCard({label:`充值 · 近 ${S.w6} 天`, val:fm(WN.usd,2), lines:[`已到账 ${fm(WN.paid_usd,2)} · 待核实 ${fm(WN.pending_usd,2)}`, `${fi(WN.payers)} 人 · ${fi(WN.orders)} 笔`, (WN.by_channel||[]).map(c => `${esc(c.ch)} ${fm(c.usd)}`).join(' · ') || '无订单']})}
-   ${kpiCard({label:`付费人数占活跃 · 近 ${S.w6} 天`, val:fp(WN.act ? WN.payers / WN.act : null), lines:[`${fi(WN.payers)}/${fi(WN.act)} 人`, '含 PayerMax 待核实']})}
-   ${V ? kpiCard({label:'启动到登录成功(按安装)', val:fp(VS.resources ? VS.ready / VS.resources : null, 0), lines:[`${fi(VS.ready)}/${fi(VS.resources)} 个安装`, `启动失败后没登录上 ${fi(VS.failed_never_ready)} 个`]}) : ''}
-   ${V ? kpiCard({label:'每人每天游戏时长', val:VU.min_p50 != null ? VU.min_p50 + ' 分钟' : '—', lines:[`中位数;四分之一的人超过 ${VU.min_p75} 分钟`, `每人每天会话中位数 ${VU.sess_p50} 次`]}) : ''}
-   ${V && VC ? kpiCard({label:`埋点覆盖 · ${md(VC.d)}`, val:fp(VC.ev_users / VC.act, 0), lines:[`埋点里 ${VC.ev_users} 人 / 活跃 ${VC.act} 人`, '只有同意采集的玩家上报']}) : ''}
-   ${TA ? kpiCard({label:'两个 App 合计 · 内测首周', val:fm(tw[0] ? tw[0].old + tw[0].n601 : null), lines:[`基线 ${fm(TA.baseline)}/周 · ${sgn(dpct(tw[0] ? tw[0].old + tw[0].n601 : null, TA.baseline))}`, `目标 = 基线 × 1.5 = ${fm(TA.baseline*1.5)}`]}) : ''}
-  </div>`;
-  const sScale = `<h2>规模与活跃</h2>
+  // 2026-11-04 601 按玩家旅程重排(用户确认):关键数字按页拆开
+  const KC = {
+    players: kpiCard({label:'内测玩家', val:fi(k.players), lines:[`老服账号 ${fi(k.old)} · 新建号 ${fi(k.new)}`, `近 ${S.w6} 天新增 ${fi(WN.reg)}(其中老服账号 ${fi(WN.reg_old)})`]}),
+    act: kpiCard({label:`活跃 · 近 ${S.w6} 天`, val:fi(WN.act), lines:[`按人去重;其中老服账号 ${fi(WN.act_old)}`, `${md(N.end)} 当天 ${fi(k.act_yday)} · 单日峰值 ${fi(k.act_peak)}`]}),
+    d1: kpiCard({label:'D1 留存(全部内测期间)', val:fp(R.all.d1.rate,0), lines:[`${R.all.d1.n}/${R.all.d1.base} 人`, `D7 ${fp(R.all.d7.rate,0)}(${R.all.d7.n}/${R.all.d7.base})`]}),
+    newdev: kpiCard({label:'新用户(全新设备)', val:fi((N.origin||[]).find(o => o.key==='new')?.n), lines:[`其余为回流用户或无法判断`, `见「用户来源」`]}),
+    pay: kpiCard({label:`充值 · 近 ${S.w6} 天`, val:fm(WN.usd,2), lines:[`已到账 ${fm(WN.paid_usd,2)} · 待核实 ${fm(WN.pending_usd,2)}`, `${fi(WN.payers)} 人 · ${fi(WN.orders)} 笔`, (WN.by_channel||[]).map(c => `${esc(c.ch)} ${fm(c.usd)}`).join(' · ') || '无订单']}),
+    payrate: kpiCard({label:`付费人数占活跃 · 近 ${S.w6} 天`, val:fp(WN.act ? WN.payers / WN.act : null), lines:[`${fi(WN.payers)}/${fi(WN.act)} 人`, '含 PayerMax 待核实']}),
+    startup: V ? kpiCard({label:'启动到登录成功(按安装)', val:fp(VS.resources ? VS.ready / VS.resources : null, 0), lines:[`${fi(VS.ready)}/${fi(VS.resources)} 个安装`, `启动失败后没登录上 ${fi(VS.failed_never_ready)} 个`]}) : '',
+    playtime: V ? kpiCard({label:'每人每天游戏时长', val:VU.min_p50 != null ? VU.min_p50 + ' 分钟' : '—', lines:[`中位数;四分之一的人超过 ${VU.min_p75} 分钟`, `每人每天会话中位数 ${VU.sess_p50} 次`]}) : '',
+    coverage: V && VC ? kpiCard({label:`埋点覆盖 · ${md(VC.d)}`, val:fp(VC.ev_users / VC.act, 0), lines:[`埋点里 ${VC.ev_users} 人 / 活跃 ${VC.act} 人`, '只有同意采集的玩家上报']}) : '',
+    twoapp: TA ? kpiCard({label:'两个 App 合计 · 内测首周', val:fm(tw[0] ? tw[0].old + tw[0].n601 : null), lines:[`基线 ${fm(TA.baseline)}/周 · ${sgn(dpct(tw[0] ? tw[0].old + tw[0].n601 : null, TA.baseline))}`, `目标 = 基线 × 1.5 = ${fm(TA.baseline*1.5)}`]}) : '',
+    acq: V && V.acq ? kpiCard({label:'带安装来源的新安装', val:fi(V.acq.with_ref), lines:[V.acq.total.filter(x => x.installs).map(x => `${esc(x.src)} ${fi(x.installs)}`).join(' · '), `${esc(V.acq.from)} 起;只覆盖同意采集的玩家`]}) : '',
+  };
+  const kp = (...ks) => `<div class="kpis">${ks.map(x => KC[x] || '').join('')}</div>`;
+  const intro = (t) => `<div class="sub" style="margin:2px 0 12px">${t}</div>`;
+  const sKpi = kp('players', 'act', 'd1', 'pay', 'twoapp');
+  const sScale = `<h2>每日新增与活跃</h2>
   <div class="grid">
    <div class="card"><h3>每日新增角色</h3><div class="sub">老服账号 = 用旧账号直接进 601;新建号 = 新账号(含老玩家小号,见「用户来源」)</div><div class="chart"><canvas id="c-n6reg"></canvas></div></div>
    <div class="card"><h3>每日活跃</h3><div class="sub">当天有每日任务、签到、名人任务、加速道具、付款或登录痕迹的人</div><div class="chart"><canvas id="c-n6act"></canvas></div></div>
@@ -754,8 +759,13 @@ function n601Page(part){
   const evState = (e) => !e.start ? '时间未定' : (e.end ? (thru >= e.end.slice(0,10) ? '已结束' : thru >= e.start.slice(0,10) ? '进行中' : '未开始') : (thru >= e.start.slice(0,10) ? '已发生' : '未到'));
   const sCal = (D.n601_events || []).length ? `<h2>版本、投放与活动</h2><div class="card"><div class="sub">时间是中国 / 新加坡时间;状态按数据截至日 ${esc(thru)} 判断。活动开始后以数据为准核对是否真的开了。趋势图上:活动 = 浅金色底,发版和投放变化 = 虚线</div>
    <div class="tw"><table><thead><tr><th>类型</th><th>名称</th><th>时间</th><th>状态</th><th>说明</th></tr></thead><tbody>${D.n601_events.map(e => `<tr><td>${esc(e.kind)}</td><td class="l">${esc(e.name)}</td><td class="l">${e.start ? esc(e.start) + (e.end ? ' ~ ' + esc(e.end) : '') : '—'}</td><td>${evState(e)}</td><td class="l note">${esc(e.note || '')}</td></tr>`).join('')}</tbody></table></div></div>` : '';
-  const PARTS = {n601:[sToday, sBanner, sKpi, sCal, EV.chain, sScale, sTA], n6tech:[sBanner, EV.tech], n6new:[sBanner, EV.acq, EV.sess, EV.first, sOrigin, sRet],
-                 n6grow:[sBanner, EV.palace, sGrow, EV.build, EV.games], n6pay:[sBanner, sPay, EV.shop, EV.dia], n6dq:[EV.dq]};
+  const PARTS = {
+    n601:  [sToday, sBanner, intro('601 内测整体情况:规模、留存、付费的关键数字和从获客到付费的全链路;每一步的细节在后面的页签。'), sKpi, EV.chain, sCal, sTA],
+    n6tech:[sBanner, intro('玩家从哪里来、装上之后能不能顺利进入游戏:安装来源、新老玩家来源、启动到登录、注册当天。'), kp('acq', 'newdev', 'startup'), EV.acq, sOrigin, EV.techStart, EV.first],
+    n6new: [sBanner, intro('进入以后留不留得住:每日新增与活跃、按来源的留存、新人前 7 天、游戏时长与时段。'), kp('act', 'd1', 'playtime'), sScale, sRet, EV.sess],
+    n6grow:[sBanner, intro('留下来的人玩到哪、玩什么:主城等级、建筑与英雄、玩法参与、新手引导、活动、小游戏。'), EV.palace, sGrow, EV.build, EV.games],
+    n6pay: [sBanner, intro('付费规模与到账情况:渠道与商品、点击到到账的链路、付费玩家、钻石存量。'), kp('pay', 'payrate'), sPay, EV.shop, EV.dia],
+    n6dq:  [intro('客户端性能和数据本身的可靠性:加载与帧率、请求失败与异常、埋点覆盖与字段质量。本页始终是全部玩家,不随平台、国家、版本筛选。'), kp('coverage'), EV.techPerf, EV.dq]};
   $('root').innerHTML = `<section id="sec-${part}">${PARTS[part].join('\n')}</section>`;
   const lab = dl.map(r => md(r.d)), acc = css('--accent'), gold = css('--gold'), slate = css('--slate');
   const stack = {x:{stacked:true}, y:{stacked:true, beginAtZero:true}};
@@ -783,19 +793,19 @@ function n601Page(part){
 // ================= 601 埋点与全链路(2026-11-03,第一期)
 function n6ev(V){
   const none = '<div class="card"><div class="empty">埋点数据这次没有取到</div></div>';
-  if (!V) return {chain:'', tech:none, sess:'', first:'', palace:'', build:'', games:'', shop:'', dia:'', dq:none, acq:'', charts(){}};
+  if (!V) return {chain:'', tech:none, techStart:none, techPerf:'', sess:'', first:'', palace:'', build:'', games:'', shop:'', dia:'', dq:none, acq:'', charts(){}};
   const pc = (k, n) => n ? `${fp(k / n, 0)}<span class="note"> ${fi(k)}/${fi(n)}</span>` : '—';
   const sec = (x) => x == null ? '—' : x + ' 秒';
   const bars = (rows, top) => `<div class="funnel">` + rows.map((x, i) => `<div class="fr"><span>${esc(x[0])}</span><div class="fb" style="width:${Math.max(0.4, (x[1] || 0) / (top || 1) * 100)}%"></div><span class="n">${x[1] == null ? '待接入' : fi(x[1]) + (i ? ` · 本步 ${rows[i-1][1] ? fp(x[1] / rows[i-1][1], 0) : '—'}` : '')}</span></div>`).join('') + `</div>`;
   const C = V.chain, S = V.startup, SS = V.sessions, B = V.build, SH = V.shop, G = V.games, Q = V.dq;
   const stPl = C.players[0].n;
-  const chain = `<h2>全链路</h2>
+  const chain = `<h2>全链路</h2><div class="sub" style="margin:-4px 0 10px">每一步的细节:获客与安装 → 「获客与进入」;留存 → 「留存与活跃」;成长 → 「成长与玩法」;付费 → 「付费」</div>
   <div class="grid">
    <div class="card"><h3>安装 → 登录(埋点,按安装)</h3><div class="sub">一个安装 = 一次安装(重装算新的);${esc(Q.from)} 起。「本步」= 占上一步的比例</div>${bars(C.installs, C.installs[0][1])}
-    <div class="note">启动失败过、之后也没登录上的安装 ${fi(S.total.failed_never_ready)} 个;失败原因见「启动与技术」</div></div>
+    <div class="note">启动失败过、之后也没登录上的安装 ${fi(S.total.failed_never_ready)} 个;失败原因见「获客与进入」</div></div>
    <div class="card"><h3>建角色 → 付费(按人)</h3><div class="sub">内测开始以来的内测玩家。每一步写了来源;埋点那步只算同意采集的人,是下限。各步不是严格嵌套(例如没完成主线也可能升到 3 级)</div>
     <div class="tw"><table><thead><tr><th>步骤</th><th>人数</th><th>占建角色</th><th>来源</th></tr></thead><tbody>${C.players.map(x => `<tr><td class="l">${esc(x.name)}</td><td>${x.n == null ? '—' : fi(x.n)}</td><td>${x.n == null ? '—' : x.base ? pc(x.n, x.base) : pc(x.n, stPl)}</td><td class="l">${esc(x.src)}</td></tr>`).join('')}</tbody></table></div>
-    <div class="note">待研发接入后补上的步骤:${C.pending.map(esc).join('、')}。D1 / D7 的分母是满期的人数,不是全部建角色的人</div></div>
+    <div class="note">还没接进这条链路的步骤:${C.pending.map(esc).join('、')}。D1 / D7 的分母是满期的人数,不是全部建角色的人</div></div>
   </div>`;
   // 启动与技术
   const vt = V.versions.filter(x => x.installs >= 3);
@@ -926,7 +936,8 @@ function n6ev(V){
     mkChart('c-n6cov', {evDates:cv.map(x=>x.d), data:{labels:cv.map(x => md(x.d)), datasets:[{type:'bar', label:'看板活跃', data:cv.map(x => x.act), backgroundColor:soft, borderColor:acc, borderWidth:1, borderRadius:3},
       {type:'bar', label:'埋点里的内测玩家', data:cv.map(x => x.ev_users), backgroundColor:acc, borderRadius:3}]}, options:{scales:{x:{}, y:{beginAtZero:true}}}});
   }
-  return {chain, tech, sess, first, palace, build, games, shop, dia, dq, acq, charts};
+  const ti = tech.indexOf('<h2>加载与帧率</h2>'), techStart = ti < 0 ? tech : tech.slice(0, ti), techPerf = ti < 0 ? '' : tech.slice(ti);
+  return {chain, tech, techStart, techPerf, sess, first, palace, build, games, shop, dia, dq, acq, charts};
 }
 const N6ST = [['resources','资源准备'], ['account_version','账号 / 版本检查'], ['connection','连接游戏服'], ['city_initialization','主城初始化']];
 const N6DONE = {free:'免费立即完成', natural:'自然计时完成', diamond:'花钻石', card:'加速卡'};

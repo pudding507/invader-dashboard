@@ -2077,7 +2077,7 @@ def n601_client(c, N, w=None, seg=None):
                          {'name': '发起过 Google / Apple 支付', 'n': int(len(ids & (set(CK[CK.server_id == 601].monetId) if len(CK) else set()))), 'src': '支付表'},
                          {'name': '付费(含 PayerMax 待核实)', 'n': k['payers'], 'src': '订单表'},
                          {'name': '其中有已到账订单(Google / Apple)', 'n': n6_paid_users(m, ids), 'src': '订单表 + New Era 支付表'}],
-             'pending': ['首次打开(E126)', '引导每一步(E023 step_id)', '点商品(E130)', '支付结果(E128)']}
+             'pending': ['首次打开(E002 entry,B72 起有数据)', '引导每一步(E023 step_id,B72 起有数据)', '发起购买(E126,未发版)', '支付结果(E127,未发版)']}   # 2026-11-04 按 11-03 定稿编号更正(原写 E126 / E130 / E128 是重编号前的)
     # 钻石存量、小游戏
     DS = pd.DataFrame(m.get('N601_diamond stock', []))
     dia = None
