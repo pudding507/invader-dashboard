@@ -1,0 +1,8 @@
+{
+  "name": "invader-dashboard-tools",
+  "private": true,
+  "description": "只用来把 site/ 上传到 Cloudflare Pages",
+  "dependencies": {
+    "wrangler": "3.80.0"
+  }
+}

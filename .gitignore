@@ -1,0 +1,20 @@
+# 账号密码
+db_config.json
+.env
+*.env
+# 玩家数据与生成产物
+data/
+raw_metrics.json
+data_preview.json
+site/
+preview_artifact.html
+# 内部分析(只给本人审)
+internal/
+# 备份、日志、依赖
+_backup/
+*.bak*
+logs/
+tools/node_modules/
+tools/.wrangler/
+__pycache__/
+.DS_Store
