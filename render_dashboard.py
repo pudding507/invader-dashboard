@@ -196,7 +196,8 @@ td.l{text-align:left;white-space:normal}
       <button role="tab" data-tab="alerts">异常中心</button>
     </nav>
     <div class="filters" id="f-bar">
-      <span class="fl">时间 <span class="seg" id="f-w"></span></span>
+      <span class="fl" style="display:none">时间 <span class="seg" id="f-w"></span></span>
+      <span class="note" style="margin-right:6px">时间:近 30 天(趋势图看近 30 天每天)</span>
       <span class="fl">平台 <span class="seg" id="f-plat"></span></span>
       <label class="fl" for="f-srv">服务器 <select class="sel" id="f-srv"></select></label>
       <label class="fl" for="f-country">国家 <select class="sel" id="f-country"></select></label>
@@ -227,7 +228,7 @@ const BANDS = D.meta.bands, WINS = D.meta.windows, END = D.meta.data_through;
 // 选了服务器时,活跃 / 等级 / 收入 / 新用户 / PvP / 联盟 都取该服的视图(同一账号可能在多个服)
 const X = (name) => (S.server !== 'all' && D.srv && D.srv[S.server]) ? D.srv[S.server][name] : D[name];
 const S = {tab:'n601', w6:1, seg6:'all', w:30, plat:'all', band:'all', server:'all', dauMode:'dau', revMode:'revenue', lvlMetric:'users', cohDen:'reg'};
-try { const s = JSON.parse(localStorage.getItem('iv-state')||'{}'); Object.assign(S, {w:s.w||30, w6:[1,0].includes(s.w6) ? s.w6 : S.w6, seg6:s.seg6||S.seg6, plat:s.plat||'all', band:s.band||'all', server:s.server||'all'}); } catch(e) {}
+try { const s = JSON.parse(localStorage.getItem('iv-state')||'{}'); Object.assign(S, {w:30, w6:[1,0].includes(s.w6) ? s.w6 : S.w6, seg6:s.seg6||S.seg6, plat:s.plat||'all', band:s.band||'all', server:s.server||'all'}); } catch(e) {}
 if (S.server !== 'all' && !(D.srv && D.srv[S.server])) S.server = 'all';
 if (S.server !== 'all' && (S.band.startsWith('c:') || S.band.startsWith('v:'))) S.band = 'all';
 if (!S.band.startsWith('c:') && !S.band.startsWith('v:')) S.band = 'all';   // 2026-10-21 去掉等级段筛选:之前存下的等级段选择一律回到全部
@@ -307,7 +308,7 @@ function cohortRate(rows, num, N, w){  // 已满 N 天的最近 w 个注册日
 }
 function win(rows, w){ return {cur: rows.slice(-w), prev: rows.slice(-2*w, -w)}; }
 function ratio(rows, a, b){ const d = sum(rows.map(r => r[b])); return d ? sum(rows.map(r => r[a])) / d : null; }
-const rangeDays = () => ({7:30, 14:45, 30:90, 90:120}[S.w] || 90);
+const rangeDays = () => 30;   // 2026-11-05 老服去掉时间筛选,趋势统一看近 30 天(用户确认)
 
 // ---------- 图表
 // 2026-11-04 601 版本 / 投放 / 活动日历(D.n601_events):趋势图按天标出。活动 = 浅金色底,单日事件(发版、开投)= 虚线
@@ -575,7 +576,7 @@ function money(){
    <div class="card"><h3>付费分层 · 近 90 天累计</h3><div class="sub">全部正式服,不随任何筛选变化 · 付费 ${fi(M.concentration.payers)} 人 · ${fm(M.concentration.revenue)}</div>
     <div class="tw"><table><thead><tr><th>档位</th><th>人数</th><th>收入</th><th>占比</th><th>人均</th></tr></thead><tbody>${M.tiers.map(t => `<tr><td>${esc(t.tier)}</td><td>${fi(t.users)}</td><td>${fm(t.revenue)}</td><td>${fp(t.share)}</td><td>${fm(t.users ? t.revenue/t.users : null)}</td></tr>`).join('')}</tbody></table></div>
     <div class="note">收入集中度:${M.concentration.rows.map(r => `Top ${r.top}(${r.users} 人)${fp(r.share)}`).join(' · ')}</div></div>
-   <div class="card"><h3>收入按渠道 · 近 ${S.w} 天</h3><div class="sub">全部正式服、全平台、全等级</div>
+   <div class="card"><h3>收入按渠道 · 近 ${S.w} 天合计</h3><div class="sub">全部正式服、全平台、全等级;每天的变化见上面「收入趋势 · 按维度」</div>
     <div class="tw"><table><thead><tr><th>渠道</th><th>收入</th><th>占比</th><th>付费人数</th></tr></thead><tbody>${ch.map(r => `<tr><td>${esc({Apple:'Apple',Google:'Google',ThirdParty:'第三方(网页)'}[r[0]]||r[0])}</td><td>${fm(r[1])}</td><td>${fp(chTot ? r[1]/chTot : null)}</td><td>${fi(r[2])}</td></tr>`).join('')}</tbody></table></div></div>
   </div>
   <div class="grid">
@@ -1242,7 +1243,7 @@ function pvpPage(){
    <div class="banner">Correlation, not causation:被打的玩家本身更显眼、更活跃,分层只能扣掉一部分差异。样本 < 30 的格子不下结论。</div>
    ${afterLossTable(A.rows)}</div>
   </section>`;
-  const dd = P.daily || [], lab = dd.map(r => md(r[0]));
+  const dd = (P.daily || []).slice(-30), lab = dd.map(r => md(r[0]));   // 2026-11-05 趋势统一近 30 天
   mkChart('c-pvpd', {data:{labels:lab, datasets:[{type:'bar', label:'入侵次数', data:dd.map(r => r[2]), backgroundColor:css('--accent'), yAxisID:'y'},
     {type:'line', label:'发起人数', data:dd.map(r => r[1]), borderColor:css('--gold'), borderWidth:2, pointRadius:0, yAxisID:'y1'},
     {type:'line', label:'城被打下的活跃玩家', data:dd.map(r => r[4]), borderColor:css('--bad'), borderWidth:1.5, pointRadius:0, yAxisID:'y1'}]},
@@ -1294,7 +1295,7 @@ function allyPage(){
     ${(jt[S.plat] || []).map(r => `<tr><td>${esc(r.bucket)}</td><td>${fi(r.n)}</td><td>${r.n >= 30 ? fp(r.d7,0) : '<span class="note">n<30</span>'}</td><td>${r.n >= 30 ? fp(r.d30,0) : '<span class="note">n<30</span>'}</td><td>${r.days30 ?? '—'}</td><td>${r.n >= 30 ? fp(r.pay30,0) : '<span class="note">n<30</span>'}</td></tr>`).join('')}</tbody></table></div></div>
    <div class="card"><h3>每日联盟事件(人数)</h3><div class="sub">${S.server === 'all' ? '全部正式服' : S.server + ' 服的活跃玩家'}</div><div class="chart"><canvas id="c-ally"></canvas></div></div>
   </div></section>`;
-  const dd = Al.daily || [], pal = [css('--accent'), css('--good'), css('--bad'), css('--gold')];
+  const dd = (Al.daily || []).slice(-30), pal = [css('--accent'), css('--good'), css('--bad'), css('--gold')];   // 近 30 天
   mkChart('c-ally', {type:'line', data:{labels:dd.map(r => md(r[0])), datasets:['申请','入盟','退盟','建盟'].map((n, i) => ({label:n, data:dd.map(r => r[i+1]), borderColor:pal[i], borderWidth:1.5, pointRadius:0}))}});
   bindInfo(); bindLinks();
 }
@@ -1316,7 +1317,7 @@ function geoPage(){
    </tbody></table></div></div>
   <div class="grid">
    <div class="card"><h3>国家质量矩阵</h3><div class="sub">横轴 = 活跃人数,纵轴 = 新用户 D7(有国家记录口径),气泡 = 收入;不含「未知」;D7 样本 < 30 的国家不画</div><div class="chart tall"><canvas id="c-cq"></canvas></div></div>
-   <div class="card"><h3>版本 · 近 ${S.w} 天</h3><div class="sub">玩家在窗口内最后一次登录用的版本;没有版本发布记录,做不了发布前后对比</div>
+   <div class="card"><h3>版本 · 每天(近 30 天)</h3><div class="sub">每天活跃玩家用的客户端版本;没有版本发布记录,做不了发布前后对比</div>
     <div class="tw"><table><thead><tr><th>版本</th><th>活跃</th><th>占比</th><th>人均活跃天数</th><th>等级中位数</th><th>付费人数</th><th>付费率</th><th>收入</th></tr></thead><tbody>
     ${V.map(r => `<tr><td>${esc(r.version)}</td><td>${fi(r.active)}</td><td>${fp(r.share)}</td><td>${r.avg_days ?? '—'}</td><td>${r.lvl ?? '—'}</td><td>${fi(r.payers)}</td><td>${fp(r.pay_rate)}</td><td>${fm(r.revenue)}</td></tr>`).join('')}</tbody></table></div>
     <h3 style="margin-top:8px">每日活跃的版本分布</h3><div class="chart"><canvas id="c-ver"></canvas></div></div>
@@ -1326,7 +1327,7 @@ function geoPage(){
     plugins:[{id:'cl', afterDatasetsDraw(ch){ const ctx = ch.ctx; ctx.save(); ctx.font = '11px ' + css('--font-ui'); ctx.fillStyle = css('--ink'); ch.getDatasetMeta(0).data.forEach((p, i) => ctx.fillText(cname(pts[i].country), p.x + 8, p.y - 6)); ctx.restore(); }}],
     options:{interaction:{mode:'nearest', intersect:true}, plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c) => { const r = pts[c.dataIndex]; return `${cname(r.country)}:活跃 ${r.active},D7 ${fp(r.d7,0)},收入 ${fm(r.revenue)}`; }}}},
       scales:{x:{title:{display:true, text:'活跃人数', color:css('--muted')}}, y:{min:0, title:{display:true, text:'新用户 D7', color:css('--muted')}, ticks:{callback:(x)=>Math.round(x*100)+'%'}}}}});
-  const vd = g.version_daily; if (vd) { const pal = [css('--accent'), css('--gold'), css('--slate'), css('--violet'), css('--grid')];
+  const vd0 = g.version_daily, vd = vd0 ? {columns:vd0.columns, rows:vd0.rows.slice(-30)} : null; /* 近 30 天 */ if (vd) { const pal = [css('--accent'), css('--gold'), css('--slate'), css('--violet'), css('--grid')];
     mkChart('c-ver', {type:'bar', data:{labels:vd.rows.map(r => md(r[0])), datasets:vd.columns.map((c, i) => ({label:c, data:vd.rows.map(r => r[i+1]), backgroundColor:pal[i % 5], stack:'s'}))}, options:{scales:{x:{stacked:true}, y:{stacked:true}}}}); }
   bindInfo(); bindLinks();
 }
@@ -1355,6 +1356,27 @@ function oldExtra(tab){
   const big = (v) => v == null ? '—' : v >= 1e12 ? (v / 1e12).toFixed(2) + ' 万亿' : v >= 1e8 ? (v / 1e8).toFixed(1) + ' 亿' : fi(v);
   const pcx = (k, n) => n ? `${fp(k / n, 0)}<span class="note"> ${fi(k)}/${fi(n)}</span>` : '—';
   const NOTE = '<span class="note" style="font-weight:400"> · 全部老服,不随筛选</span>';
+  // 2026-11-05 维度趋势(用户:老服改趋势、近 30 天,图内可切国家等维度)。维度拆分是全部正式服、全平台,不随顶部筛选
+  const T = D.old_trends;
+  if (T) {
+    const lab = T.dates.map(md), pal = [css('--accent'), css('--gold'), css('--slate'), css('--violet'), css('--good'), css('--bad'), 'rgba(120,120,140,0.55)'];
+    const draw_ = (id, ser, kind) => { const ex = Chart.getChart($(id)); if (ex) ex.destroy(); const ks = Object.keys(ser);
+      mkChart(id, {type:kind === 'bar' ? 'bar' : 'line', data:{labels:lab, datasets:ks.map((k, i) => ({label:k === '其他' ? '其他' : (cname(k) || k), data:ser[k], backgroundColor:pal[i % pal.length], borderColor:pal[i % pal.length], borderWidth:kind === 'bar' ? 0 : 2, pointRadius:0, borderRadius:2, stack:kind === 'bar' ? 's' : undefined}))},
+        options:{scales:kind === 'bar' ? {x:{stacked:true}, y:{stacked:true, beginAtZero:true}} : {x:{}, y:{beginAtZero:true}}}}); };
+    const dimCard = (id, title, sub, dims, h) => `<div class="card"><h3>${title}</h3><div class="sub">${sub} <span class="seg" id="${id}-seg">${dims.map((d, i) => `<button aria-pressed="${i === 0}" data-v="${d}">${d}</button>`).join('')}</span></div><div class="chart"${h ? ` style="height:${h}px"` : ''}><canvas id="${id}"></canvas></div></div>`;
+    const bindDim = (id, src, kind) => { const segEl = $(id + '-seg'); if (!segEl) return; const first = segEl.querySelector('button').dataset.v; draw_(id, src[first], kind);
+      segEl.querySelectorAll('button').forEach(b => b.onclick = () => { segEl.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); draw_(id, src[b.dataset.v], kind); }); };
+    if (tab === 'home') { const anchor = $('c-dau') && $('c-dau').closest('.grid');
+      if (anchor) { anchor.insertAdjacentHTML('afterend', `<div class="grid">${dimCard('c-ddim', '活跃 · 按维度拆分', '近 30 天每天活跃人数,全部正式服、全平台;服务器 / 国家取最多的 6 个,其余并入「其他」。', Object.keys(T.dau))}${dimCard('c-rdim', '收入 · 按维度拆分', '近 30 天每天收入(美元),不含 601。', Object.keys(T.revenue))}</div>`);
+        bindDim('c-ddim', T.dau, 'line'); bindDim('c-rdim', T.revenue, 'bar'); } }
+    if (tab === 'money') { sec.insertAdjacentHTML('afterbegin', `<div class="grid">${dimCard('c-mdim', '收入趋势 · 按维度', '近 30 天每天收入(美元),不含 601;下面的「收入按渠道」是这 30 天的合计。', Object.keys(T.revenue))}</div>`); bindDim('c-mdim', T.revenue, 'bar'); }
+    if (tab === 'geo') { const anchor = sec.querySelector('.card'); const html = `<div class="grid">${dimCard('c-gdim', '国家趋势 · 近 30 天', '每天活跃人数 / 收入,按国家(取最多的 6 个);国家来自登录记录和服务器记录,未知的并入「其他」。', ['活跃', '收入'])}</div>`;
+      if (anchor) anchor.insertAdjacentHTML('beforebegin', html); else sec.insertAdjacentHTML('beforeend', html); bindDim('c-gdim', {'活跃': T.dau['国家'], '收入': T.revenue['国家']}, 'line'); }
+    if (tab === 'game' && T.gameplay) { const ks = Object.keys(T.gameplay), def = ['建筑升级', '副本 1', '入侵', '竞技场'].filter(k => ks.includes(k)), on = new Set(def);
+      sec.insertAdjacentHTML('afterbegin', `<div class="card"><h3>玩法每日参与 · 近 30 天</h3><div class="sub">每天参与该玩法的人数,全部正式服、全平台。点下面的玩法名加减曲线</div><div class="chips" id="gp-chips" style="display:flex;flex-wrap:wrap;gap:4px;margin:6px 0">${ks.map(k => `<button class="pill" aria-pressed="${on.has(k)}" data-v="${esc(k)}" style="cursor:pointer;border:1px solid var(--grid)">${esc(k)}</button>`).join('')}</div><div class="chart"><canvas id="c-gpd"></canvas></div></div>`);
+      const redraw = () => draw_('c-gpd', Object.fromEntries([...on].map(k => [k, T.gameplay[k]])), 'line');
+      $('gp-chips').querySelectorAll('button').forEach(b => { const st = () => { b.style.background = on.has(b.dataset.v) ? 'var(--accent-soft)' : 'transparent'; }; st(); b.onclick = () => { on.has(b.dataset.v) ? on.delete(b.dataset.v) : on.add(b.dataset.v); st(); redraw(); }; }); redraw(); }
+  }
   if (tab === 'pvp' && D.old_invade) { const X = D.old_invade, T = X.total;
     sec.insertAdjacentHTML('beforeend', `<h2>入侵结构 · 近 28 天${NOTE}</h2><div class="card"><h3>入侵、占领与解救 · 按天</h3><div class="sub">${md(X.from)} ~ ${md(X.to)}。打 NPC 城 = 城主号 ≥ 10 亿;打已被占的城 = 当时城的占领者不是城主(占领者为空的约 8.6% 场次含义不明,不算);解救 = invaderRelease。税收、占领、掠夺的资源见上面的「PvP 资源」</div>
      <div class="kpis">${kpiCard({label:'进攻场次', val:fi(T.battles), lines:[`攻方胜 ${fp(T.wins / T.battles, 0)}`]})}${kpiCard({label:'打 NPC 城', val:fp(T.npc / T.battles, 1), lines:[`${fi(T.npc)} 场`]})}${kpiCard({label:'打已被占的城', val:fp(T.on_occ / T.battles, 0), lines:[`${fi(T.on_occ)} 场`]})}${kpiCard({label:'解救', val:fi(T.release), lines:['次数']})}</div>

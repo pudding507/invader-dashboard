@@ -840,6 +840,36 @@ def gameplay(c):
 
 # ---------------------------------------------------------------- PvP
 # ---------------------------------------------------------------- 老服三项(2026-11-05,缺失清单 P1-5 / P1-7 / P2-8,用户确认上「老服」页签,只放数字)
+def old_trends(c, days=30):
+    """老服近 30 天按天趋势,带维度拆分(2026-11-05,用户:老服也改趋势,看近 30 天;图内可切维度)。
+    活跃按平台 / 服务器 / 国家;收入按渠道 / 服务器 / 国家;玩法每日参与人数。服务器、国家取近 30 天最多的 6 个,其余并入「其他」。"""
+    E = c.end; lo = E - pd.Timedelta(days=days - 1); dr = pd.date_range(lo, E); ds = [d.strftime('%Y-%m-%d') for d in dr]
+    L = c.L[(c.L.d >= lo) & (c.L.d <= E)].copy(); L['country'] = L.monetId.map(c.country).fillna('未知'); L['server'] = L.server_id.astype(int).astype(str) + ' 服'
+    O = c.O[(c.O.d >= lo) & (c.O.d <= E) & (c.O.server_id != 601)].copy(); O['country'] = O.monetId.map(c.country).fillna('未知')
+    O['server'] = O.server_id.astype(int).astype(str) + ' 服'
+    def dim(df, col, kind, topk=6):
+        g = (df.groupby(['d', col]).monetId.nunique() if kind == 'dau' else df.groupby(['d', col]).price.sum())
+        order = g.groupby(level=1).sum().sort_values(ascending=False)
+        keys = [k for k in order.index if k != '未知'][:topk]
+        rest = [k for k in order.index if k not in keys]
+        ser = {str(k): [round(float(g.get((d, k), 0)), 2) for d in dr] for k in keys}
+        if rest:
+            if kind == 'dau':   # 人数不能相加去重,「其他」单独按人去重
+                x = df[df[col].isin(rest)].groupby('d').monetId.nunique()
+            else:
+                x = df[df[col].isin(rest)].groupby('d').price.sum()
+            ser['其他(含未知)' if '未知' in rest else '其他'] = [round(float(x.get(d, 0)), 2) for d in dr]
+        return ser
+    F = feature_days(c); F = F[(F.d >= lo) & (F.d <= E)]
+    fn = {k: n for k, n, _ in FEATURES}
+    gp = F.groupby(['feature', 'd']).monetId.nunique()
+    play = {fn.get(k, k): [int(gp.get((k, d), 0)) for d in dr] for k in [k for k, _, _ in FEATURES] if k in set(F.feature)}
+    return {'dates': ds,
+            'dau': {'平台': dim(L, 'plat', 'dau'), '服务器': dim(L, 'server', 'dau'), '国家': dim(L, 'country', 'dau')},
+            'revenue': {'渠道': dim(O, 'channel', 'rev'), '服务器': dim(O, 'server', 'rev'), '国家': dim(O, 'country', 'rev')},
+            'gameplay': play}
+
+
 def old_invade(c):
     """入侵结构按天(近 28 天):场次、NPC 城占比、打已被占的城占比、胜率;解救次数和被救人数。"""
     X = pd.DataFrame(c.raw.get('PvP_invade extra daily', []))
@@ -2831,6 +2861,7 @@ def build(raw):
     DATA['gameplay'] = safe(lambda: gameplay(c), errors, 'gameplay')
     DATA['pvp'] = safe(lambda: pvp(c), errors, 'pvp')
     DATA['old_invade'] = safe(lambda: old_invade(c), errors, 'old_invade')
+    DATA['old_trends'] = safe(lambda: old_trends(c), errors, 'old_trends')
     DATA['old_ledger'] = safe(lambda: old_resource_ledger(c), errors, 'old_ledger')
     DATA['old_newdev'] = safe(lambda: old_new_device(c), errors, 'old_newdev')
     DATA['alliance'] = safe(lambda: alliance(c), errors, 'alliance')
