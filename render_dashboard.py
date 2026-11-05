@@ -644,7 +644,9 @@ function n601Page(part){
   const pn = v => String(Math.round(v * 1000) / 10), rg = (lo, hi) => hi != null ? `${pn(lo)}–${pn(hi)}%` : `${pn(lo)}%`;
   const lineTxt = Q ? Q.lines.map(l => `${l.name} D1 ${rg(l.d1, l.d1_hi)}${l.d7 != null ? ' / D7 ' + rg(l.d7, l.d7_hi) : ''}${l.d30 != null ? ' / D30 ' + rg(l.d30) : ''}`).join(';') : '';
   const r3 = md(addDays(END,-2));
-  const dl = N.daily.filter(r => !N.win || r.d >= WN.from), dsum = (key) => sum(dl.map(r => r[key]));
+  // 2026-11-05 时间筛选只影响关键数字卡;明细、渠道、商品、点击付费漏斗等表固定内测以来(近 1 天常常没有订单,表会是空的)
+  const WA = (N.win || {})['0'] || WN;
+  const dl = N.daily, dsum = (key) => sum(dl.map(r => r[key]));
   const W = N.whale_entry || {}, M = N.migration, TA = N.two_app;
   const tw = TA ? TA.weeks.filter(w => w.from >= N.start) : [];
   const V = SEG && part !== 'n6dq' ? (SEG.ev || {})['0'] : (D.n601_ev || {})['0'];   // 2026-11-05 埋点块固定内测以来   // 数据质量页始终是全部玩家
@@ -677,12 +679,12 @@ function n601Page(part){
   const sKpi = kp('newrole', 'act', 'd1', 'pay', 'paidpayers', 'pending', 'lv3', 'twoapp');
   const sScale = `<h2>每日新增与活跃</h2>
   <div class="grid">
-   <div class="card"><h3>每日新增角色</h3><div class="sub">老服账号 = 用旧账号直接进 601;新建号 = 新账号(含老玩家小号,见「用户来源」)</div><div class="chart"><canvas id="c-n6reg"></canvas></div></div>
-   <div class="card"><h3>每日活跃</h3><div class="sub">当天有每日任务、签到、名人任务、加速道具、付款或登录痕迹的人</div><div class="chart"><canvas id="c-n6act"></canvas></div></div>
+   <div class="card"><h3>每日新增角色 · 按账号来源</h3><div class="sub">按旧号直接进 / 新账号拆(按广告安装拆见总览「逐日趋势」);老服账号 = 用旧账号直接进 601;新建号 = 新账号(含老玩家小号,见「用户来源」)</div><div class="chart"><canvas id="c-n6reg"></canvas></div></div>
+   <div class="card"><h3>每日活跃 · 按账号来源</h3><div class="sub">当天有每日任务、签到、名人任务、加速道具、付款或登录痕迹的人</div><div class="chart"><canvas id="c-n6act"></canvas></div></div>
   </div>
-  <div class="card"><h3>每日明细</h3><div class="sub">付费率 = 当天付费人数 ÷ 当天活跃;ARPPU = 当天金额 ÷ 当天付费人数;金额含 PayerMax 待核实;付费人数「合计」按人去重</div>
-   <div class="tw"><table><thead><tr><th>日期</th><th>新增</th><th>其中老服账号</th><th>活跃</th><th>付费人数</th><th>付费率</th><th>金额</th><th>ARPPU</th></tr></thead><tbody>${dl.map(r => { const a = r.act_old + r.act_new; return `<tr><td>${md(r.d)}</td><td>${r.reg_old + r.reg_new}</td><td>${r.reg_old}</td><td>${a}</td><td>${r.payers}</td><td>${r.payers ? fp(r.payers / a) : '—'}</td><td>${r.usd ? fm(r.usd,2) : '—'}</td><td>${r.payers ? fm(r.usd / r.payers,2) : '—'}</td></tr>`; }).join('')}
-    <tr style="font-weight:600"><td>合计</td><td>${fi(WN.reg)}</td><td>${fi(WN.reg_old)}</td><td>${fi(WN.act)}<span class="note"> 去重</span></td><td>${fi(WN.payers)}</td><td>${WN.act ? fp(WN.payers / WN.act) : '—'}<span class="note"> 占期间活跃</span></td><td>${fm(WN.usd,2)}</td><td>${WN.payers ? fm(WN.usd / WN.payers,2) : '—'}</td></tr></tbody></table></div>
+  <div class="card"><h3>每日明细 · 内测以来</h3><div class="sub">付费率 = 当天付费人数 ÷ 当天活跃;ARPPU = 当天金额 ÷ 当天付费人数;「金额」含 PayerMax 待核实,「确认到账」不含;付费人数「合计」按人去重;最新的日期在最上面</div>
+   <details><summary class="link">展开每日明细(${dl.length} 天;趋势见上面两张图和总览「逐日趋势」)</summary><div class="tw"><table><thead><tr><th>日期</th><th>新增</th><th>其中老服账号</th><th>活跃</th><th>付费人数</th><th>付费率</th><th>金额</th><th>确认到账</th><th>ARPPU</th></tr></thead><tbody>${dl.slice().reverse().map(r => { const a = r.act_old + r.act_new; return `<tr><td>${md(r.d)}</td><td>${r.reg_old + r.reg_new}</td><td>${r.reg_old}</td><td>${a}</td><td>${r.payers}</td><td>${r.payers ? fp(r.payers / a) : '—'}</td><td>${r.usd ? fm(r.usd,2) : '—'}</td><td>${r.paid_usd ? fm(r.paid_usd,2) : '—'}</td><td>${r.payers ? fm(r.usd / r.payers,2) : '—'}</td></tr>`; }).join('')}
+    <tr style="font-weight:600"><td>合计</td><td>${fi(WA.reg)}</td><td>${fi(WA.reg_old)}</td><td>${fi(WA.act)}<span class="note"> 去重</span></td><td>${fi(WA.payers)}</td><td>${WA.act ? fp(WA.payers / WA.act) : '—'}<span class="note"> 占期间活跃</span></td><td>${fm(WA.usd,2)}</td><td>${fm(WA.paid_usd,2)}</td><td>${WA.payers ? fm(WA.usd / WA.payers,2) : '—'}</td></tr></tbody></table></div></details>
    ${(N.suspects||[]).length ? `<div class="note">疑似批量账号 ${N.suspects.length} 个,<b>尚未剔除</b>,仍计入上面所有数字(待确认):${[...new Set(N.suspects.map(x => x.reason))].map(rs => `${N.suspects.filter(x => x.reason === rs).map(x => x.id).join('、')}(${esc(rs)})`).join(';')}</div>` : ''}</div>`;
   const sOrigin = `<h2>用户来源<span class="note" style="font-weight:400"> · 不随时间筛选</span></h2>
   ${N.origin ? `<div class="card"><h3>回流用户与新用户切分</h3><div class="sub">每个 601 玩家关联的老账号 = 自己(旧号直接进)+ 同一台手机(设备广告 ID 相同)上的旧账号,再看这些老账号在老服历史上付没付过费(订单从 2023-11 起)。<b>沉睡回流</b> = 进 601 前 30 天关联老账号一次都没在老服登录。设备 ID 只用来匹配,不在页面上显示</div>
@@ -753,22 +755,22 @@ function n601Page(part){
    <div class="note">逐次升级时间要等 B72 的建筑升级埋点(E034 带 operation_id、target_level)攒够数据;没有时间戳前不算「首日 Lv3 转化率」</div></div>` : '';
   const sPay = `<h2>付费</h2>
   <div class="grid">
-   <div class="card"><h3>渠道构成</h3><div class="sub">已到账 = New Era 支付表里有商店收据、商店确认扣款(Apple 为生产环境收据)、奖励已发放</div>
-    <div class="tw"><table><thead><tr><th>渠道</th><th>金额</th><th>笔数</th><th>人数</th><th>已到账</th><th>状态</th></tr></thead><tbody>${(WN.by_channel || []).map(c => `<tr><td>${esc(c.ch)}</td><td>${fm(c.usd,2)}</td><td>${c.orders}</td><td>${c.payers}</td><td>${c.paid} 笔 · ${fm(c.paid_usd,2)}</td><td class="l">${c.paid === c.orders ? '全部已到账' : c.ch.startsWith('PayerMax') ? '待核实:PayerMax 状态表已建,还没有数据' : `${c.orders - c.paid} 笔没有到账确认`}</td></tr>`).join('')}</tbody></table></div>
+   <div class="card"><h3>渠道构成 · 内测以来</h3><div class="sub">已到账 = New Era 支付表里有商店收据、商店确认扣款(Apple 为生产环境收据)、奖励已发放</div>
+    <div class="tw"><table><thead><tr><th>渠道</th><th>金额</th><th>笔数</th><th>人数</th><th>已到账</th><th>状态</th></tr></thead><tbody>${(WA.by_channel || []).map(c => `<tr><td>${esc(c.ch)}</td><td>${fm(c.usd,2)}</td><td>${c.orders}</td><td>${c.payers}</td><td>${c.paid} 笔 · ${fm(c.paid_usd,2)}</td><td class="l">${c.paid === c.orders ? '全部已到账' : c.ch.startsWith('PayerMax') ? '待核实:PayerMax 状态表已建,还没有数据' : `${c.orders - c.paid} 笔没有到账确认`}</td></tr>`).join('')}</tbody></table></div>
     <h3 style="margin-top:8px">已剔除的订单<span class="note" style="font-weight:400"> · 不随时间筛选</span></h3><div class="tw"><table><thead><tr><th>原因</th><th>笔数</th><th>金额</th><th>账号数</th></tr></thead><tbody>${N.excluded.map(x => `<tr><td>${esc(x.why)}</td><td>${x.orders}</td><td>${fm(x.usd,2)}</td><td>${x.users}</td></tr>`).join('')}</tbody></table></div>
     <div class="note">已剔除账号:${N.test_ids.join('、')}(统一排除名单)。内测开始前注册的 ${N.excluded_players.before_start} 个角色不算内测玩家。</div></div>
-   <div class="card"><h3>商品构成</h3><div class="sub">按商品;钻石包里 PayerMax 网页价是商店价的 85%</div>
-    <div class="tw"><table><thead><tr><th>商品</th><th>笔数</th><th>人数</th><th>金额</th></tr></thead><tbody>${(WN.products||[]).map(x => `<tr><td>${esc(x.name)}</td><td>${x.orders}</td><td>${x.payers}</td><td>${fm(x.usd,2)}</td></tr>`).join('')}</tbody></table></div>
+   <div class="card"><h3>商品构成 · 内测以来</h3><div class="sub">按商品;钻石包里 PayerMax 网页价是商店价的 85%</div>
+    <div class="tw"><table><thead><tr><th>商品</th><th>笔数</th><th>人数</th><th>金额</th></tr></thead><tbody>${(WA.products||[]).map(x => `<tr><td>${esc(x.name)}</td><td>${x.orders}</td><td>${x.payers}</td><td>${fm(x.usd,2)}</td></tr>`).join('')}</tbody></table></div>
     ${N.gift_intent ? `<div class="note">发起过礼包购买的 ${N.gift_intent.users} 人(${N.gift_intent.rows} 次),其中 ${N.gift_intent.both} 人最后付了款;付费的共 ${N.gift_intent.payers} 人(有人走 PayerMax 网页,不经过礼包下单)。下单状态的含义未核对</div>` : ''}</div>
   </div>
-  ${N.checkout ? (() => { const F = WN.checkout || N.checkout.total, act = Object.fromEntries(N.daily.map(r => [r.d, r.act_old + r.act_new])), CDw = N.checkout.daily.filter(r => r.d >= WN.from), i0 = CDw.findIndex(r => r.clicks), CD = i0 < 0 ? [] : CDw.slice(i0);
+  ${N.checkout ? (() => { const F = WA.checkout || N.checkout.total, act = Object.fromEntries(N.daily.map(r => [r.d, r.act_old + r.act_new])), CDw = N.checkout.daily, i0 = CDw.findIndex(r => r.clicks), CD = i0 < 0 ? [] : CDw.slice(i0);
    const cv = (k, n) => n ? `${fp(k / n)}<span class="note"> ${k}/${n}</span>` : '—';
    return `<div class="card"><h3>点击付费漏斗(Google / Apple 内购)</h3><div class="sub">点击付费 = 在游戏里发起一次 Google / Apple 支付(每次发起记一条,同一人可多次);生成订单 = 这次发起拿到了订单号;到账 = 同一天有 Google / Apple 已到账订单。PayerMax 网页支付不经过这一步,不在漏斗里。只算内测玩家,已去掉排除名单。最近一次点击 ${esc(N.checkout.last_click || '—')}</div>
     <div class="tw"><table><thead><tr><th>点击付费人数</th><th>点击次数</th><th>生成订单人数</th><th>到账人数</th><th>点击 → 生成订单</th><th>生成订单 → 到账</th><th>点击 → 到账</th></tr></thead><tbody>
      <tr><td>${fi(F.click_users)}</td><td>${fi(F.clicks)}</td><td>${fi(F.order_users)}</td><td>${fi(F.paid_users)}</td><td>${cv(F.order_users, F.click_users)}</td><td>${cv(F.paid_users, F.order_users)}</td><td>${cv(F.paid_users, F.click_users)}</td></tr></tbody></table></div>
     ${F.paid_no_click ? `<div class="note">另有 ${F.paid_no_click} 人有 Google / Apple 订单但没有点击记录,需核对</div>` : ''}
-    <h3 style="margin-top:8px">按天</h3><div class="tw"><table><thead><tr><th>日期</th><th>活跃</th><th>点击付费人数</th><th>点击占活跃</th><th>点击次数</th><th>生成订单人数</th><th>到账人数</th></tr></thead><tbody>${CD.map(r => `<tr><td>${md(r.d)}</td><td>${fi(act[r.d] ?? 0)}</td><td>${fi(r.click_users)}</td><td>${act[r.d] ? cv(r.click_users, act[r.d]) : '—'}</td><td>${fi(r.clicks)}</td><td>${fi(r.order_users)}</td><td>${fi(r.paid_users)}</td></tr>`).join('')}</tbody></table></div>
-    <div class="note">人数少,比率只作参考;一天内同一人多次点击按 1 人计</div></div>`; })() : ''}
+    <details><summary class="link">展开按天明细(趋势见上面「点击付费 → 下单 → 到账 · 按天」)</summary><div class="tw"><table><thead><tr><th>日期</th><th>活跃</th><th>点击付费人数</th><th>点击占活跃</th><th>点击次数</th><th>生成订单人数</th><th>到账人数</th></tr></thead><tbody>${CD.map(r => `<tr><td>${md(r.d)}</td><td>${fi(act[r.d] ?? 0)}</td><td>${fi(r.click_users)}</td><td>${act[r.d] ? cv(r.click_users, act[r.d]) : '—'}</td><td>${fi(r.clicks)}</td><td>${fi(r.order_users)}</td><td>${fi(r.paid_users)}</td></tr>`).join('')}</tbody></table></div>
+    </details><div class="note">人数少,比率只作参考;一天内同一人多次点击按 1 人计</div></div>`; })() : ''}
   <div class="card"><h3>付费玩家<span class="note" style="font-weight:400"> · 不随时间筛选</span></h3><div class="sub">按金额排序(含 PayerMax 待核实)。首充时主城 = 首次付费前最后一次签到记下的主城等级(没签到过就是「—」),是近似值</div>
    <div class="tw"><table><thead><tr><th>玩家 ID</th><th>姓名</th><th>来源</th><th>注册</th><th>注册到首充</th><th>首充时主城</th><th>金额</th><th>笔数</th><th>渠道</th><th>首次付费</th><th>最近付费</th><th>现在主城</th><th>活跃天数</th><th>最后登录</th></tr></thead><tbody>${N.payers.map(p => `<tr><td>${p.id}</td><td class="l"><span dir="auto">${esc(p.name ?? '—')}</span></td><td class="l">${esc(p.origin || G[p.grp] || '—')}</td><td>${md(p.reg)}</td><td>${p.days_to_first ?? '—'} 天</td><td>${p.city_at_first ?? '—'}</td><td>${fm(p.usd,2)}</td><td>${p.orders}</td><td class="l">${esc(p.channels)}</td><td>${esc((p.first||'').slice(5))}</td><td>${esc((p.last_pay||'').slice(5))}</td><td>${p.city ?? '—'}</td><td>${p.act_days ?? '—'}</td><td>${esc((p.last_login||'').slice(5))}</td></tr>`).join('')}</tbody></table></div></div>`;
   const sTA = `${TA ? `<h2>两个 App 合计收入<span class="note" style="font-weight:400"> · 不随时间筛选</span></h2>
@@ -1342,7 +1344,7 @@ function draw(){
   $('f-bar6').classList.toggle('hidden', !N6.includes(S.tab) || S.tab === 'n6dq');   // 2026-11-05 技术与数据页不随筛选,不显示筛选条
   const W6 = D.n601 && D.n601.win ? D.n601.win[S.w6] : null;
   const SC6 = (D.n601_seg || {}).counts || {};
-  $('f-w6note').textContent = W6 ? `${W6.from.slice(5)} ~ ${END.slice(5)}${S.w6 === 1 ? '(数据截至日全天)' : '(内测以来)'};时间筛选只影响关键数字卡和几张汇总表;趋势图、埋点块、标「不随时间筛选」的卡片都是全部内测期间或当前状态。平台 / 国家 / 版本一次选一项;国家按账号注册 IP 判断(挂 VPN 会判错),版本是最后一次登录的版本,不足 10 人的不单列;无法判断:平台 ${(SC6.plat||{})['未知'] ?? 0} 人、国家 ${(SC6.country||{})['未知'] ?? 0} 人、版本 ${(SC6.ver||{})['未知'] ?? 0} 人` : '';
+  $('f-w6note').textContent = W6 ? `${W6.from.slice(5)} ~ ${END.slice(5)}${S.w6 === 1 ? '(数据截至日全天)' : '(内测以来)'};时间筛选只影响关键数字卡;趋势图、埋点块、标「不随时间筛选」的卡片都是全部内测期间或当前状态。平台 / 国家 / 版本一次选一项;国家按账号注册 IP 判断(挂 VPN 会判错),版本是最后一次登录的版本,不足 10 人的不单列;无法判断:平台 ${(SC6.plat||{})['未知'] ?? 0} 人、国家 ${(SC6.country||{})['未知'] ?? 0} 人、版本 ${(SC6.ver||{})['未知'] ?? 0} 人` : '';
   if (N6.includes(S.tab)) $('stamp').textContent = `601 数据截至 ${END} · 中国时间 · 更新于 ${(D.meta.run_at||'').replace('T',' ').slice(0,16)}`;
   ({home, newuser, life, game, pvp:pvpPage, ally:allyPage, money, geo:geoPage, alerts, defs,
     n601:() => n601Page('n601'), n6tech:() => n601Page('n6tech'), n6first:() => n601Page('n6first'), n6new:() => n601Page('n6new'), n6grow:() => n601Page('n6grow'), n6pay:() => n601Page('n6pay'), n6dq:() => n601Page('n6dq')})[S.tab]();
