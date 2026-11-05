@@ -1,41 +1,39 @@
-# Invader 看板(MVP,搭建中)
+# Invader 数据看板
 
 规格:`~/DataGripProjects/invader/03_分析与规格/Invader看板产品规格.md`(按用户给的看板流程写,含 MVP 选型)。
 结构照 SoulMap(`DataGripProjects/soulmap-upload`):卡片 SQL → 抓数 → 渲染静态页 → 发布。
 
+## 现状(2026-11-05)
+
+- 线上:https://invader-dashboard.pages.dev/(公开链接,用户选择不加访问控制)。旧的 Claude 页面 WWgs4prtcmJz6rfuoBaXmt 不再更新。
+- 页签:**601**(总览 / 获客与进入 / 新手与首日 / 留存与活跃 / 成长与玩法 / 付费 / 技术与数据)+ **老服**(二级页签)+ 口径。601 按玩家旅程排列,每张卡标口径标签(服务端 / 埋点下限 / 代理 / 混合 / 含待核实)。
+- 需求来源:用户《601 新 App 数据看板改造需求方案》(`~/DataGripProjects/invader/01_对外沟通/收到的需求/`);口径以 `~/DataGripProjects/invader/05_知识库/` 为准。
+- 看板只放数据:建议、负责人、诊断结论写 `internal/`(给用户审,不上看板)。
+- 代码用 git(GitHub 私有仓库 pudding507/invader-dashboard),脚本退出时自动提交并推送;旧备份在 `_backup/`。
+
 ## 目录
 
 ```
-sql/*.sql          # 每张卡一个 SQL,第一行 `-- db: log|prod`;每条只查一个库,可原样存成 Metabase 卡片
-fetch_db.py        # 现在用:经 VPN 直连库跑 sql/ → raw_metrics.json(凭据读 db_config.json,勿提交)
-compute.py         # 计算层:raw_metrics.json → 页面数据(KPI、漏斗、cohort、生命周期、商业化、大 R、告警、Top 问题)
-render_dashboard.py # 渲染层:页面数据 → site/index.html(完整网页)+ preview_artifact.html(Claude 网页用)
-run_all.sh         # 一键:抓数 → 渲染
-lib/chart.umd.min.js
+sql/*.sql            # 每张卡一个 SQL,第一行 `-- db: log|prod|rs`;每条只查一个库
+sql_light/*.sql      # 轻量刷新用的「今天」小卡
+fetch_db.py          # 经 VPN 直连库跑 sql/ → raw_metrics.json(凭据读 ~/.invader_env,不进仓库);--light 只抓今天;--only 卡名 --out 文件 单抓一张
+compute.py           # 计算层:raw_metrics.json → 页面数据
+render_dashboard.py  # 渲染层:页面数据 → site/index.html + preview_artifact.html
+scheduled_refresh.sh # 定时刷新:抓数 → 校验 → 渲染 → 上传 Cloudflare Pages → git 推送
+data/exclusions.json # 统一排除名单(测试号 / 疑似号)
+internal/            # 内部审阅稿(不上看板、不进仓库)
 ```
 
-## 现在怎么跑(需连 VPN)
+## 怎么跑(需连 VPN)
 
 ```bash
-python3 fetch_db.py                      # 约 5 分钟,8 张卡
-python3 -c "import json,compute;json.dump(compute.build(json.load(open('raw_metrics.json'))),open('data_preview.json','w'),ensure_ascii=False)"
+./scheduled_refresh.sh        # 和定时任务一样:当天第一次完整抓数(约 25 分钟),之后轻量刷新(约 1 分钟)并发布
+python3 render_dashboard.py   # 只用现有 raw_metrics.json 重新计算和渲染,不发布
 ```
 
-## 进度(2026-10-20 下班存档)
+## 待处理
 
-- [x] 规格文档
-- [x] 8 张卡片 SQL(登录卡已改为 账号×天×服,原因见 SQL 头注释)
-- [x] fetch_db.py 跑通(8/8)
-- [x] compute.py 跑通,无报错;已核对:近 30 天活跃 1,661、收入 $32,915.53(不含 601)、付费 178 人,与《Invader链路分析》一致
-- [x] render_dashboard.py(2026-10-21):首页 / 新用户 / 生命周期 / 商业化与大 R / 异常中心 / 口径;筛选 时间×平台×等级段;KPI 点 i 看定义
-- [x] 发布:https://claude.ai/artifact/WWgs4prtcmJz6rfuoBaXmt (发布文件 = preview_artifact.html;换会话 redeploy 必须带 url=,否则会新建一个链接)
-- [ ] Metabase 接好后:sql/ 存成卡片 → 换 fetch_metabase.py → GitHub Actions 定时 → Cloudflare Pages(site/index.html)
-
-## 待处理的问题
-
-1. **升级速度**:按 账号×服 算后,15→20 级仍有中位数 0 天(n=16)。抽查是真实的「隔几天没登录、回来时已跳级」或一天内连升多级(如 6 级→23 级),不是口径错。页面上要同时给样本数和 P75,并注明「按首次被观察到的日期计算,未登录的日子看不到」。
-2. 告警阈值是第一版建议值,跑两周后按误报调。
-3. 当前计算出的 Top 5 问题(10-19):Android 当天到 Lv3 转化下降(12% vs 23%)、日收入低于 28 日中位数、新手首日停在 1–2 级(20% 到 Lv3)、收入依赖少数大 R(前 5% 占 63%)、1–2 级 15 天留存 12%。大 R 风险:红 2 人、黄 2 人。
+见 `~/DataGripProjects/invader/05_知识库/数据限制.md`(R01–R40)和下面变更记录里的「待」。等研发:引导步骤顺序表、PayerMax 到账状态、E126 以后的新事件发版、新 App 广告 ID 上报(下个版本)。
 
 ## 变更记录
 
@@ -92,13 +90,14 @@ python3 -c "import json,compute;json.dump(compute.build(json.load(open('raw_metr
 | 2026-11-04 | **601 按玩家旅程重排**(用户确认):页签改为 601 总览 / 获客与进入 / 留存与活跃 / 成长与玩法 / 付费 / 技术与数据。总览只留今天实时、核心数字(玩家、活跃、D1、充值、两 App 合计)、全链路、版本与活动日历、两 App 合计收入;获客来源、用户来源、启动与登录、注册当天归到「获客与进入」;每日新增与活跃、留存、新人前 7 天、会话归到「留存与活跃」;加载帧率、请求失败归到「技术与数据」。每页开头一句「这页回答什么」,关键数字按页拆开。只调位置和标题,算法不变。全链路待接入步骤的事件号按 11-03 定稿更正(E002 / E023 / E126 / E127) | 用户:601 要有逻辑、条理清晰、不分散 |
 | 2026-11-04 | 定时改为工作时间每 2 小时:10:10 / 12:10 / 14:10 / 16:10 / 18:10(第一次完整抓数,之后轻量);页面「今天」块的说明同步 | 用户要求 |
 | 2026-11-04 | 按用户需求《601 新 App 数据看板改造需求方案》(存档 invader/01_对外沟通/收到的需求/)第一批:① 总览「充值」改为「确认到账」,待核实单列不计入;两 App 合计周付费拆成 601 确认到账 / 待核实;② 新页签「新手与首日」(注册当天、新手引导 + E023 step_id 分布、主城 Lv2/Lv3/Lv5 到达按来源、建筑升级与受阻、新人前 7 天),相应卡片从获客、留存、成长页移入;③「留存与活跃」加留存双轨(同一批注册当天有埋点的人,埋点会话 vs 活跃痕迹,带区间);④ 每张 601 卡标口径标签(服务端 / 埋点下限 / 代理 / 混合 / 含待核实,悬停有说明)。看板不放负责人和处理建议(维持 10-21 决定)| 用户需求 5.1 / 5.3 / 5.4 / 5.5 / 5.10 / 4.2 |
+| 2026-11-05 | 按用户确认的顺序:① 601 用户来源加「广告安装」组(新号没有广告 ID、埋点安装来源是 Facebook / Instagram 的,11-04 起 36 人);② 今天实时的 601 订单按支付表剔测试卡 / 沙盒 / 退款(`Revenue_today` 加 orderId,`N601_order status` 加进轻量刷新);④ 总览核心数字改为新建角色、活跃、D1、确认到账、确认付费人数、待核实、主城 Lv3 到达、两 App 合计;⑤ 获客页加「建号版本」表,顶部版本筛选改名「版本(最后登录)」;⑥ 付费页加「订单状态分层」(互斥,只有确认到账计入收入);⑦ 技术页卡片标「未采集到 / 样本不足」;⑧ 新手页加「注册后多久到主城 Lv3」(E034 埋点,11-04 起);⑨ 技术与数据页隐藏筛选条;⑩ README 现状、目录、定时刷新改成当前情况 | 用户确认;第 3 条(缺广告 ID 措辞)用户说下个版本就上报,不改 |
 
 ## 定时刷新与公开链接(2026-10-21 起)
 
 开发确认 Metabase 不接 Invader(网络不通、老 SQL Server 不稳)。改为本机定时任务:
 
-- `scheduled_refresh.sh`:检查 VPN → 抓数(SQL Server 单条超时 3 分钟)→ 全部卡成功才渲染 → `wrangler pages deploy` 上传到 Cloudflare Pages。当天成功过就不再跑。
-- `com.invader.dashboard.daily.plist`:每天 11:45 / 15:45 / 20:45 触发(后两次只是补跑)。装法:复制到 `~/Library/LaunchAgents/` 后 `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.invader.dashboard.daily.plist`。
+- `scheduled_refresh.sh`:检查 VPN → 抓数(SQL Server 单条超时 3 分钟)→ 全部卡成功才渲染 → 页面 JSON 合法才 `wrangler pages deploy` 上传到 Cloudflare Pages → 退出时 git 提交并推送(失败只记日志)。
+- `com.invader.dashboard.daily.plist`:**2026-11-05 起每天 10:10 / 12:10 / 14:10 / 16:10 / 18:10**(当天第一次完整抓数,之后轻量刷新;10-21 ~ 10-27 是 11:45 / 15:45 / 20:45,10-28 ~ 11-04 是 10:30 起每 2 小时)。装法:复制到 `~/Library/LaunchAgents/` 后 `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.invader.dashboard.daily.plist`。
 - 凭据:`~/.invader_env`(chmod 600):数据库账号 + `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` / `CF_PAGES_PROJECT`。
 - 工具:Node 20.18.0 装在 `~/.local/node`(官方包,已校验 SHA256);wrangler 3.80.0 装在 `tools/`。
 - 用户选择**公开链接(不加访问控制)**:页面含收入与大 R 玩家 ID,拿到链接的人都能看。

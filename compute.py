@@ -1447,6 +1447,20 @@ def n601(c, only=None):
     if only is not None:   # 分组时订单也只算这批玩家
         Ok = Ok[Ok.monetId.isin(set(P.monetId))].copy()
     Ok['pay_ch'] = Ok.channel.map({'ThirdParty': 'PayerMax(网页)', 'Google': 'Google', 'Apple': 'Apple'}).fillna(Ok.channel)
+    # 订单状态分层(2026-11-05,用户需求 5.5):内测开始以来 601 全部订单按状态分层;只有「确认到账」计入确认收入
+    def lay(x):
+        return {'orders': int(len(x)), 'usd': r(float(x.price.sum()), 2), 'users': int(x.monetId.nunique())}
+    O_ = O[O.d >= pd.Timestamp(N601_START)] if 'd' in O else O
+    # 各层互斥:每笔订单只归一层(和剔除原因 why 的先后顺序一致:测试号 → 商店测试 → 退款 → 其他)
+    order_layers = [
+        {'name': '确认到账', 'note': 'Google / Apple:商店确认扣款,奖励已发放', 'counted': True, **lay(Ok[Ok.status == 'paid'])},
+        {'name': '已下单未确认', 'note': '有订单记录,商店还没确认或奖励未发', 'counted': False, **lay(Ok[Ok.status == 'unconfirmed'])},
+        {'name': '待核实', 'note': 'PayerMax 网页支付,没有到账状态记录', 'counted': False, **lay(Ok[Ok.status == 'pending'])},
+        {'name': '退款', 'note': 'Google 状态为已退款', 'counted': False, **lay(O_[O_.why == '已退款'])},
+        {'name': '测试号', 'note': '排除名单里的账号(不论用什么方式付)', 'counted': False, **lay(O_[O_.why == '清单内测试号'])},
+        {'name': '测试卡 / 沙盒(非测试号)', 'note': 'Google 测试卡、Apple 沙盒', 'counted': False, **lay(O_[O_.why.fillna('').str.startswith('商店测试')])},
+        {'name': '其他剔除', 'note': '今天的订单(未完整)、角色已不在 601', 'counted': False, **lay(O_[O_.why.isin(['今天(未完整)', '角色已不在 601'])])},
+        {'name': '失败 / 取消', 'note': '订单表不记失败;取消记录(UnityBillingCheckoutCancelV1)还没接入', 'counted': False, 'orders': None, 'usd': None, 'users': None}]
     # 活跃痕迹
     acts = []
     T = pd.DataFrame(m.get('N601_activity tasks day', []))
@@ -1779,6 +1793,14 @@ def n601(c, only=None):
         return {'n': int(len(x)), 'lv2': int((x.city >= 2).sum()), 'lv3': int((x.city >= 3).sum()), 'lv5': int((x.city >= 5).sum()),
                 'd0_signed': len(sig), 'd0_lv3': int(sum(v >= 3 for v in sig))}
     SRCN = [('fresh', '真新设备'), ('repeat', '同设备重复新号'), ('alt', '老玩家小号'), ('direct', '旧号直接进'), ('ad', '广告安装'), ('noid', '无广告 ID')]
+    # 建号版本(2026-11-05,用户需求 4.1):新账号建号时的客户端版本 = 首次进入的版本;页面筛选用的是最后登录版本,两者分开。
+    # 旧号直接进的账号建号版本是老 App 的,不算
+    AC = pd.DataFrame(m.get('N601_accounts', []))
+    reg_versions = None
+    if len(AC) and 'reg_version' in AC:
+        X_ = P[P.grp == 'new'].assign(rv=P.monetId.map(AC.drop_duplicates('monetId').set_index('monetId').reg_version)).dropna(subset=['rv', 'reg'])
+        reg_versions = [{'v': v_, 'n': int(len(x)), 'from': x.reg.min().strftime('%Y-%m-%d'), 'to': x.reg.max().strftime('%Y-%m-%d'),
+                         'd1': ret(x, 1), 'lv3': int((x.city >= 3).sum())} for v_, x in sorted(X_.groupby('rv'), key=lambda kv: kv[0])]
     city_reach = ([{'key': k_, 'name': nm, **reach(P[P.src == k_])} for k_, nm in SRCN if 'src' in P and (P.src == k_).any()]
                   + [{'key': 'all', 'name': '全部', **reach(P)}])
     # 两个 App 合计周付费(总纲 6.2):以内测开始日为周起点,往前 8 周是基线(全是老服);601 部分 = 已到账 + PayerMax 待核实
@@ -1887,12 +1909,14 @@ def n601(c, only=None):
                         'act': int(a_.monetId.nunique()), 'act_old': int(a_[a_.grp == 'old'].monetId.nunique()),
                         'payers': int(o_.monetId.nunique()), 'orders': int(len(o_)), 'usd': r(o_.price.sum(), 2), 'paid_usd': r(o_.paid_usd.sum(), 2),
                         'pending_usd': r(o_.price.sum() - o_.paid_usd.sum(), 2),
+                        # 2026-11-05 总览补:确认付费人数(有已到账订单的人)、窗口内新建角色里现在已到主城 Lv3 的人
+                        'paid_payers': int(o_[o_.status == 'paid'].monetId.nunique()), 'reg_lv3': int((p_.city >= 3).sum()),
                         'by_channel': [{'ch': x.pay_ch, 'orders': int(x.orders), 'usd': r(x.usd, 2), 'payers': int(x.payers), 'paid': int(x.paid), 'paid_usd': r(x.paid_usd, 2)} for _, x in bc.sort_values('usd', ascending=False).iterrows()],
                         'products': [{'name': k_, 'orders': int(len(v)), 'payers': int(v.monetId.nunique()), 'usd': r(v.price.sum(), 2)} for k_, v in sorted(o_.groupby('product'), key=lambda kv: -kv[1].price.sum())],
                         'checkout': funnel(CK[CK.d >= lo], store[store.d >= lo]) if checkout else None}
     return {'start': N601_START, 'end': E.strftime('%Y-%m-%d'), 'win': win, 'kpi': kpi, 'daily': daily, 'retention': retention, 'cohorts': cohorts,
             'progress': progress, 'levels': levels, 'gameplay': gameplay, 'migration': migration, 'device_groups': device_groups, 'origin': origin_rows, 'whale_entry': whale_entry, 'climb': climb,
-            'hero_marks': hero_marks, 'two_app': two_app, 'guide': guide, 'city_reach': city_reach,
+            'hero_marks': hero_marks, 'two_app': two_app, 'guide': guide, 'city_reach': city_reach, 'reg_versions': reg_versions, 'order_layers': order_layers,
             'achievements': achievements, 'activities': activities, 'products': products, 'gift_intent': gift_intent, 'payers': payers, 'checkout': checkout,
             'by_channel': [{'ch': x.pay_ch, 'orders': int(x.orders), 'usd': r(x.usd, 2), 'payers': int(x.payers), 'paid': int(x.paid), 'paid_usd': r(x.paid_usd, 2)} for _, x in by_ch.sort_values('usd', ascending=False).iterrows()],
             'excluded': [{'why': x.why, 'orders': int(x.orders), 'usd': r(x.usd, 2), 'users': int(x.users)} for _, x in excluded.iterrows()],
@@ -2161,6 +2185,22 @@ def n601_client(c, N, w=None, seg=None):
             rows_.append({'n': n_, 'base': len(base_), 'session': k_s, 'proxy': k_p, 'ci_s': wilson(k_s, len(base_)), 'ci_p': wilson(k_p, len(base_)),
                           'either': sum(((u, regs[u] + pd.Timedelta(days=n_)) in ses) or ((u, regs[u] + pd.Timedelta(days=n_)) in act_p) for u in base_)})
         dual = {'obs': len(obs), 'from': SE.d.min().strftime('%Y-%m-%d') if len(SE) else None, 'rows': rows_}
+    # 首日 Lv3(2026-11-05,用户需求 5.3B):B72 起建筑升级完成(E034)带 target_level 和时间;主城 = building_type 5。
+    # 只看 11-04 及以后注册、且注册当天就有埋点的内测玩家(可观测),算注册后多久第一次升到主城 Lv3
+    lv3 = None
+    if 'target_level' in E_all:
+        PP = P.drop_duplicates('monetId').set_index('monetId')
+        ct = pd.to_datetime(PP.created_at, format='mixed')
+        UP = E_all[(E_all.event_name == 'invader_building_upgrade_completed') & (E_all.building_type == 5) & (E_all.target_level >= 3) & E_all.user_id.isin(ids)]
+        first3 = UP.groupby('user_id').t.min()
+        seen0 = set(E_all[E_all.user_id.isin(ids)].assign(r_=lambda d: d.user_id.map(PP.reg)).query('d == r_').user_id)
+        coh = [u for u in seen0 if PP.reg.get(u) is not None and PP.reg[u] >= pd.Timestamp('2026-11-04')]
+        if coh:
+            hrs = [(first3[u] - ct[u]).total_seconds() / 3600 for u in coh if u in first3.index]
+            mature = [u for u in coh if ct[u] + pd.Timedelta(hours=24) <= E + pd.Timedelta(days=1)]
+            lv3 = {'n': len(coh), 'reached': len(hrs), 'mature': len(mature),
+                   'in24': sum(1 for u in mature if u in first3.index and (first3[u] - ct[u]).total_seconds() <= 86400),
+                   'p50_h': r(float(pd.Series(hrs).median()), 1) if hrs else None, 'from': '2026-11-04'}
     # 引导步骤(2026-11-04):B72 起 E023 带 step_id;没有顺序定义表,只按编号列出人数,不当漏斗
     steps = None
     T23 = E_[(E_.event_name == 'invader_tutorial_step_completed') & E_.user_id.isin(ids)] if 'step_id' in E_ else E_.iloc[0:0]
@@ -2190,7 +2230,7 @@ def n601_client(c, N, w=None, seg=None):
     return {'palace_hist': palace, 'coverage': cov, 'startup': startup, 'versions': vers, 'sessions': sess, 'first_day': fd, 'loads': loads, 'fps': fps,
             'reqfail': reqfail, 'exceptions': [[str(k_), int(v)] for k_, v in exc.component.value_counts().items()], 'interrupted': int(len(bi)),
             'build': build, 'shop': shop, 'pay_chain': pay_chain, 'chain': chain, 'diamonds': dia, 'games': games, 'dq': dq, 'acq': acq,
-            'ret_dual': dual, 'steps': steps}
+            'ret_dual': dual, 'steps': steps, 'lv3': lv3}
 
 
 def n601_segments(c):
