@@ -1914,7 +1914,21 @@ def n601(c, only=None):
                         'by_channel': [{'ch': x.pay_ch, 'orders': int(x.orders), 'usd': r(x.usd, 2), 'payers': int(x.payers), 'paid': int(x.paid), 'paid_usd': r(x.paid_usd, 2)} for _, x in bc.sort_values('usd', ascending=False).iterrows()],
                         'products': [{'name': k_, 'orders': int(len(v)), 'payers': int(v.monetId.nunique()), 'usd': r(v.price.sum(), 2)} for k_, v in sorted(o_.groupby('product'), key=lambda kv: -kv[1].price.sum())],
                         'checkout': funnel(CK[CK.d >= lo], store[store.d >= lo]) if checkout else None}
-    return {'start': N601_START, 'end': E.strftime('%Y-%m-%d'), 'win': win, 'kpi': kpi, 'daily': daily, 'retention': retention, 'cohorts': cohorts,
+    # 逐日趋势补字段(2026-11-05,老板要逐日趋势):每天确认到账金额 / 人、广告安装新建角色
+    for row_ in daily:
+        d_ = pd.Timestamp(row_['d']); od_ = Ok[Ok.d == d_]
+        row_['paid_usd'] = r(float(od_.paid_usd.sum()), 2) if 'paid_usd' in od_ else None
+        row_['paid_payers'] = int(od_[od_.status == 'paid'].monetId.nunique())
+        row_['reg_ad'] = int(((P.reg == d_) & (P.src == 'ad')).sum()) if 'src' in P else 0
+    # 付费回传 Meta(2026-11-05,缺失清单 P0-1):按天 × 回传状态;只是回传记录,不代表 Meta 后台的归因结果
+    PB = pd.DataFrame(m.get('N601_meta postback', []))
+    postback = None
+    if len(PB):
+        PB = PB[PB.d >= N601_START]
+        postback = {'total': {k_: int(v) for k_, v in PB.groupby('disposition').n.sum().items()},
+                    'daily': [{'d': d_, **{k_: int(v) for k_, v in g.set_index('disposition').n.items()}} for d_, g in PB.groupby('d')],
+                    'paid_orders': int((Ok.status == 'paid').sum())}
+    return {'start': N601_START, 'end': E.strftime('%Y-%m-%d'), 'win': win, 'kpi': kpi, 'daily': daily, 'postback': postback, 'retention': retention, 'cohorts': cohorts,
             'progress': progress, 'levels': levels, 'gameplay': gameplay, 'migration': migration, 'device_groups': device_groups, 'origin': origin_rows, 'whale_entry': whale_entry, 'climb': climb,
             'hero_marks': hero_marks, 'two_app': two_app, 'guide': guide, 'city_reach': city_reach, 'reg_versions': reg_versions, 'order_layers': order_layers,
             'achievements': achievements, 'activities': activities, 'products': products, 'gift_intent': gift_intent, 'payers': payers, 'checkout': checkout,
@@ -2052,7 +2066,10 @@ def n601_client(c, N, w=None, seg=None):
             'user_day': {'n': int(len(pud)), 'min_p50': q(pud.sec / 60, .5), 'min_p75': q(pud.sec / 60, .75), 'min_p90': q(pud.sec / 60, .9), 'sess_p50': q(pud.n, .5)},
             'daily': [{'d': d_.strftime('%Y-%m-%d'), 'users': int((pud.d == d_).sum()), 'min_p50': q(pud[pud.d == d_].sec / 60, .5), 'min_mean': r(float((pud[pud.d == d_].sec / 60).mean()), 1) if (pud.d == d_).any() else None,
                        'sess': int(su[su.d == d_].sid.nunique())} for d_ in days],
-            'end_reason': {str(k): int(v) for k, v in su.end_reason.value_counts().items()}}
+            'end_reason': {str(k): int(v) for k, v in su.end_reason.value_counts().items()},
+            # 2026-11-05(缺失清单 P1-4):会话结束时停在哪个界面(B72 起 E003 带 screen_id),只算有这个字段的会话
+            'last_screen': {str(k): int(v) for k, v in su.screen_id.dropna().value_counts().items()} if 'screen_id' in su else {},
+            'last_screen_n': int(su.screen_id.notna().sum()) if 'screen_id' in su else 0}
     hr = U.assign(h=U.t.dt.hour).groupby('h').agg(users=('user_id', 'nunique'), ev=('event_name', 'size')).reindex(range(24), fill_value=0)
     sess['hours'] = [[int(h), int(x.users), int(x.ev)] for h, x in hr.iterrows()]
     # 首日:注册当天的会话时长 → 次日是否还有活跃痕迹(相关,不是因果)
@@ -2169,6 +2186,43 @@ def n601_client(c, N, w=None, seg=None):
         return tot
     games = {'petquiz': mg(PQ, 'used_diamond', 1, lambda d: d.bet.astype(float).sum(), lambda d: d.reward_diamonds.astype(float).sum()),
              'slot': mg(SL, 'used_ticket', 0, lambda d: d.bet_base.astype(float).sum(), slot_rew)}
+    # 按系统版本(2026-11-05,缺失清单 P1-6):B72 起事件带 os_version;按安装数取前 12 个
+    osv = None
+    if 'os_version' in E_:
+        G_ = E_[E_.os_version.notna() & (E_.os_version.astype(str) != '')]
+        if len(G_):
+            rows_o = []
+            G_ = G_.assign(osk=G_.platform.map({1: 'Android', 2: 'iOS'}).fillna('未知平台') + ' ' + G_.os_version.astype(str))   # os_version 只有版本号,要带平台
+            for v_, g in G_.groupby('osk'):
+                st_ = set(g[g.event_name.isin(['invader_startup_stage_completed', 'invader_startup_failed'])].install_md5)
+                rd_ = set(g[g.event_name == 'invader_login_ready'].install_md5)
+                ld_ = g[g.event_name == 'invader_screen_load_summary'].duration_ms
+                rows_o.append({'v': str(v_), 'installs': int(g.install_md5.nunique()), 'started': len(st_), 'ready': len(rd_ & st_) if st_ else len(rd_),
+                               'load_n': int(ld_.notna().sum()), 'load_p50': q(ld_.dropna() / 1000, .5),
+                               'fail': int(g[g.event_name == 'invader_startup_failed'].install_md5.nunique())})
+            osv = sorted(rows_o, key=lambda x: -x['installs'])[:12]
+    # 新人前 7 天逐日(2026-11-05,缺失清单 P2-11):注册满 7 天的内测玩家,第 0–6 天每天的情况。
+    # 活跃 = 活跃痕迹(全部人);会话、时长、商店、建筑升级 = 埋点(只覆盖同意采集的人,10-29 起)
+    f7d = None
+    act_p0, regs0 = getattr(c, 'n601_act', None), getattr(c, 'n601_reg', None)
+    if act_p0 is not None and regs0 and not seg:
+        base7 = [u for u in ids if regs0.get(u) is not None and regs0[u] + pd.Timedelta(days=6) <= E]
+        ev7 = E_all[E_all.user_id.isin(base7)]
+        ses7 = ev7[ev7.event_name.isin(['invader_session_start', 'invader_login_ready'])]
+        sm7 = ev7[ev7.event_name == 'invader_session_summary'].groupby(['user_id', 'd']).active_seconds.sum()
+        seen7 = [u for u in base7 if u in set(ev7.user_id) and regs0[u] >= pd.Timestamp('2026-10-29')]
+        rows7 = []
+        for k_ in range(7):
+            dd = {u: regs0[u] + pd.Timedelta(days=k_) for u in base7}
+            act_k = sum((u, dd[u]) in act_p0 for u in base7)
+            ses_k = {u for u, d_ in zip(ses7.user_id, ses7.d) if u in dd and d_ == dd[u]}
+            mins = [sm7.get((u, dd[u])) / 60 for u in ses_k if (u, dd[u]) in sm7.index]
+            shop_k = {u for u, d_ in zip(ev7[ev7.event_name == 'invader_shop_open'].user_id, ev7[ev7.event_name == 'invader_shop_open'].d) if u in dd and d_ == dd[u]}
+            up_ = ev7[ev7.event_name == 'invader_building_upgrade_completed']
+            upg_k = sum(1 for u, d_ in zip(up_.user_id, up_.d) if u in dd and d_ == dd[u])
+            rows7.append({'k': k_, 'act': act_k, 'ses': len(ses_k), 'min_p50': r(float(pd.Series(mins).median()), 1) if mins else None,
+                          'shop': len(shop_k), 'upg': upg_k})
+        f7d = {'n': len(base7), 'ev_n': len(seen7), 'rows': rows7}
     # 留存双轨(2026-11-04,用户需求 5.4):埋点会话口径 = 当天有 session_start 或 login_ready 且带玩家 ID;只覆盖同意采集的玩家。
     # 可观测队列 = 注册当天就有埋点的内测玩家;同一批人再用代理口径(活跃痕迹)算一次,两者并列,不互相替代
     dual = None
@@ -2230,7 +2284,7 @@ def n601_client(c, N, w=None, seg=None):
     return {'palace_hist': palace, 'coverage': cov, 'startup': startup, 'versions': vers, 'sessions': sess, 'first_day': fd, 'loads': loads, 'fps': fps,
             'reqfail': reqfail, 'exceptions': [[str(k_), int(v)] for k_, v in exc.component.value_counts().items()], 'interrupted': int(len(bi)),
             'build': build, 'shop': shop, 'pay_chain': pay_chain, 'chain': chain, 'diamonds': dia, 'games': games, 'dq': dq, 'acq': acq,
-            'ret_dual': dual, 'steps': steps, 'lv3': lv3}
+            'ret_dual': dual, 'steps': steps, 'lv3': lv3, 'os': osv, 'first7_daily': f7d}
 
 
 def n601_segments(c):
