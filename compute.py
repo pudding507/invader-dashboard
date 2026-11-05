@@ -1411,7 +1411,8 @@ N601_EVENTS = [
     {'kind': '活动', 'name': '英雄升级', 'start': '2026-11-14 03:00', 'end': '2027-01-04 02:59', 'windows': [['2026-11-14 03:00', '2026-11-21 02:59']], 'note': '第一期 11-14 03:00 ~ 11-21 02:59,之后每 11 天一期'},
     {'kind': '道具', 'name': '限时票 1,500 张(5 位指定玩家)', 'start': None, 'end': None, 'note': '7 天有效,需单独发放,发放时间未定;读券数据时单列'},
 ]
-N6_WINDOWS = (1, 7, 14, 30)            # 2026-11-03:601 各页的时间筛选;近 1 天 = 数据截至日全天(中国时间)
+N6_WINDOWS = (1, 0)                    # 601 时间筛选:近 1 天 = 数据截至日全天(中国时间);0 = 内测以来。2026-11-05 用户:老板看趋势,去掉近 7 / 14 / 30 天
+N6_EV_WINDOWS = (0,)                   # 埋点块只算内测以来(趋势和表都看全部期间)
 # 2026-10-28 排除名单改为读 data/exclusions.json(所有报表共用一份);文件缺失或损坏时退回下面这份测试号
 EXCLUSIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'exclusions.json')
 N601_TEST_IDS_FALLBACK = {2116084, 2116101, 2116102, 2116103, 2116104, 2116105, 2116106, 2116107, 2116108, 2116131, 2116132}   # 2026-10-29 已确认测试账号 11 个(提审号 2 + InvTest001–008 + 原技术号)
@@ -1965,7 +1966,7 @@ def n601(c, only=None):
     # 时间筛选(2026-11-03):新增、活跃、付费、渠道、商品、点击付费漏斗按窗口重算;留存、当前等级、来源等不随窗口变
     win = {}
     for w_ in N6_WINDOWS:
-        lo = E - pd.Timedelta(days=w_ - 1)
+        lo = E - pd.Timedelta(days=w_ - 1) if w_ else start
         o_ = Ok[Ok.d >= lo]; a_ = Act[Act.d >= lo]; p_ = P[P.reg >= lo]
         bc = o_.groupby('pay_ch').agg(orders=('price', 'size'), usd=('price', 'sum'), payers=('monetId', 'nunique'),
                                       paid=('status', lambda v: int((v == 'paid').sum())), paid_usd=('paid_usd', 'sum')).reset_index()
@@ -1984,6 +1985,13 @@ def n601(c, only=None):
         row_['paid_usd'] = r(float(od_.paid_usd.sum()), 2) if 'paid_usd' in od_ else None
         row_['paid_payers'] = int(od_[od_.status == 'paid'].monetId.nunique())
         row_['reg_ad'] = int(((P.reg == d_) & (P.src == 'ad')).sum()) if 'src' in P else 0
+    # 渠道按周(2026-11-05 改趋势):每 7 天一周(从内测开始日切),各渠道确认到账 / 待核实
+    pay_weeks = []
+    for k_ in range(0, (E - start).days // 7 + 1):
+        a0 = start + pd.Timedelta(days=7 * k_); a1 = min(a0 + pd.Timedelta(days=6), E); wk_ = Ok[(Ok.d >= a0) & (Ok.d <= a1)]
+        pay_weeks.append({'from': a0.strftime('%Y-%m-%d'), 'days': (a1 - a0).days + 1,
+                          **{ch_: r(float(wk_[wk_.pay_ch == ch_].paid_usd.sum()), 2) for ch_ in ('Google', 'Apple')},
+                          'pending': r(float(wk_.price.sum() - wk_.paid_usd.sum()), 2), 'payers': int(wk_.monetId.nunique())})
     # 付费回传 Meta(2026-11-05,缺失清单 P0-1):按天 × 回传状态;只是回传记录,不代表 Meta 后台的归因结果
     PB = pd.DataFrame(m.get('N601_meta postback', []))
     postback = None
@@ -1992,7 +2000,7 @@ def n601(c, only=None):
         postback = {'total': {k_: int(v) for k_, v in PB.groupby('disposition').n.sum().items()},
                     'daily': [{'d': d_, **{k_: int(v) for k_, v in g.set_index('disposition').n.items()}} for d_, g in PB.groupby('d')],
                     'paid_orders': int((Ok.status == 'paid').sum())}
-    return {'start': N601_START, 'end': E.strftime('%Y-%m-%d'), 'win': win, 'kpi': kpi, 'daily': daily, 'postback': postback, 'retention': retention, 'cohorts': cohorts,
+    return {'start': N601_START, 'end': E.strftime('%Y-%m-%d'), 'win': win, 'kpi': kpi, 'daily': daily, 'postback': postback, 'pay_weeks': pay_weeks, 'retention': retention, 'cohorts': cohorts,
             'progress': progress, 'levels': levels, 'gameplay': gameplay, 'migration': migration, 'device_groups': device_groups, 'origin': origin_rows, 'whale_entry': whale_entry, 'climb': climb,
             'hero_marks': hero_marks, 'two_app': two_app, 'guide': guide, 'city_reach': city_reach, 'reg_versions': reg_versions, 'order_layers': order_layers,
             'achievements': achievements, 'activities': activities, 'products': products, 'gift_intent': gift_intent, 'payers': payers, 'checkout': checkout,
@@ -2159,6 +2167,11 @@ def n601_client(c, N, w=None, seg=None):
     fps = {'labels': [l_ for _, l_ in N6_FPS],
            'by_mode': sorted([fps_row(g, N6_MODE.get(int(k), str(k))) for k, g in bp.groupby('mode_id')], key=lambda x: -x['n']),
            'by_tier': [fps_row(g, N6_TIER.get(k, k)) for k, g in bp.groupby('device_tier')], 'all': fps_row(bp, '全部')}
+    # 2026-11-05 改趋势(用户:老板看趋势):加载按天中位数(主城 / 世界地图 / 战斗)、战斗低于 30 帧的占比按天
+    loads_daily = [{'d': d_.strftime('%Y-%m-%d'), **{N6_SCREEN.get(s_, s_): q(ld[(ld.d == d_) & (ld.screen_id == s_)].duration_ms / 1000, .5) for s_ in ('city', 'world', 'battle')},
+                    'n': int((ld.d == d_).sum())} for d_ in days]
+    fps_daily = [{'d': d_.strftime('%Y-%m-%d'), 'n': int((bp.d == d_).sum()),
+                  'lt30': int(bp[(bp.d == d_) & bp.fps_bucket.isin(['lt_20', '20_29'])].shape[0])} for d_ in days]
     cr = ev('invader_critical_request_failed')
     reqfail = {'by': [{'stage': N6_REQ.get(k[0], k[0]), 'err': N6_ERR.get(k[1], k[1]), 'n': int(v), 'users': int(cr[(cr.stage == k[0]) & (cr.safe_error_code == k[1])].install_md5.nunique())}
                       for k, v in cr.groupby(['stage', 'safe_error_code']).size().sort_values(ascending=False).items()],
@@ -2345,7 +2358,7 @@ def n601_client(c, N, w=None, seg=None):
         PH['band'] = pd.cut(PH.city, [0, 1, 2, 5, 10, 99], labels=['1 级', '2 级', '3–5 级', '6–10 级', '11 级以上'])
         tb = PH.pivot_table(index='date', columns='band', values='players', aggfunc='sum', observed=False).fillna(0).sort_index()
         palace = {'bands': [str(x) for x in tb.columns], 'rows': [[str(d_)[:10]] + [int(v) for v in row] for d_, row in tb.iterrows()]}
-    return {'palace_hist': palace, 'coverage': cov, 'startup': startup, 'versions': vers, 'sessions': sess, 'first_day': fd, 'loads': loads, 'fps': fps,
+    return {'palace_hist': palace, 'coverage': cov, 'startup': startup, 'versions': vers, 'sessions': sess, 'first_day': fd, 'loads': loads, 'fps': fps, 'loads_daily': loads_daily, 'fps_daily': fps_daily,
             'reqfail': reqfail, 'exceptions': [[str(k_), int(v)] for k_, v in exc.component.value_counts().items()], 'interrupted': int(len(bi)),
             'build': build, 'shop': shop, 'pay_chain': pay_chain, 'chain': chain, 'diamonds': dia, 'games': games, 'dq': dq, 'acq': acq,
             'ret_dual': dual, 'steps': steps, 'lv3': lv3, 'os': osv, 'first7_daily': f7d}
@@ -2394,7 +2407,7 @@ def n601_by_segment(c, errors):
         if not N:
             continue
         out[key] = {'n': len(ids), 'n601': N,
-                    'ev': {str(w_): safe(lambda w_=w_: n601_client(c, N, w_, seg=(k, v, ids)), errors, f'n601_ev_{key}_{w_}') for w_ in N6_WINDOWS}}
+                    'ev': {str(w_): safe(lambda w_=w_: n601_client(c, N, w_, seg=(k, v, ids)), errors, f'n601_ev_{key}_{w_}') for w_ in N6_EV_WINDOWS}}
     counts = {'plat': {str(a): int(b) for a, b in G.plat.value_counts().items()}, 'ver': {str(a): int(b) for a, b in G.ver.value_counts().items()},
               'country': {str(a): int(b) for a, b in G.country.value_counts().items()}}
     return {'segs': out, 'counts': counts}
@@ -2828,7 +2841,7 @@ def build(raw):
     DATA['today'] = safe(lambda: today_live(c), errors, 'today')
     DATA['n601'] = safe(lambda: n601(c), errors, 'n601')
     DATA['n601_events'] = N601_EVENTS
-    DATA['n601_ev'] = {str(w_): safe(lambda w_=w_: n601_client(c, DATA['n601'], w_), errors, f'n601_ev_{w_}') for w_ in N6_WINDOWS}
+    DATA['n601_ev'] = {str(w_): safe(lambda w_=w_: n601_client(c, DATA['n601'], w_), errors, f'n601_ev_{w_}') for w_ in N6_EV_WINDOWS}
     DATA['n601_seg'] = safe(lambda: n601_by_segment(c, errors), errors, 'n601_seg')
     if DATA['n601'] and DATA['n601'].get('exclusions_error'):
         errors['exclusions'] = '排除名单读取失败,已退回内置测试号:' + DATA['n601']['exclusions_error']
