@@ -774,10 +774,10 @@ function n601Page(part){
   <div class="card"><h3>付费玩家<span class="note" style="font-weight:400"> · 不随时间筛选</span></h3><div class="sub">按金额排序(含 PayerMax 待核实)。首充时主城 = 首次付费前最后一次签到记下的主城等级(没签到过就是「—」),是近似值</div>
    <div class="tw"><table><thead><tr><th>玩家 ID</th><th>姓名</th><th>来源</th><th>注册</th><th>注册到首充</th><th>首充时主城</th><th>金额</th><th>笔数</th><th>渠道</th><th>首次付费</th><th>最近付费</th><th>现在主城</th><th>活跃天数</th><th>最后登录</th></tr></thead><tbody>${N.payers.map(p => `<tr><td>${p.id}</td><td class="l"><span dir="auto">${esc(p.name ?? '—')}</span></td><td class="l">${esc(p.origin || G[p.grp] || '—')}</td><td>${md(p.reg)}</td><td>${p.days_to_first ?? '—'} 天</td><td>${p.city_at_first ?? '—'}</td><td>${fm(p.usd,2)}</td><td>${p.orders}</td><td class="l">${esc(p.channels)}</td><td>${esc((p.first||'').slice(5))}</td><td>${esc((p.last_pay||'').slice(5))}</td><td>${p.city ?? '—'}</td><td>${p.act_days ?? '—'}</td><td>${esc((p.last_login||'').slice(5))}</td></tr>`).join('')}</tbody></table></div></div>`;
   const sTA = `${TA ? `<h2>两个 App 合计收入<span class="note" style="font-weight:400"> · 不随时间筛选</span></h2>
-  <div class="card"><h3>周付费:老服 + 601</h3><div class="sub">每 7 天一周,从内测开始日 ${esc(N.start)} 往前往后切;基线 = 开测前 ${TA.base_weeks} 周老服的平均周付费 ${fm(TA.baseline)};首轮目标 = 基线 × 1.5(总纲 6.2)。601 拆成确认到账和待核实两段(待核实主要是 PayerMax,没有到账状态);「合计」和「比基线」含待核实;最后一周没过完,按实际天数</div>
+  <div class="card"><h3>每日付费:老服 + 601</h3><div class="sub">内测开始前 14 天起每天;基线线 = 周基线 ÷ 7(按天算的参照,单日波动大,看 7 天平均)。按周的表在下面。周的切法:每 7 天一周,从内测开始日 ${esc(N.start)} 往前往后切;基线 = 开测前 ${TA.base_weeks} 周老服的平均周付费 ${fm(TA.baseline)};首轮目标 = 基线 × 1.5(总纲 6.2)。601 拆成确认到账和待核实两段(待核实主要是 PayerMax,没有到账状态);「合计」和「比基线」含待核实;最后一周没过完,按实际天数</div>
    <div class="chart"><canvas id="c-n6wk"></canvas></div>
-   <div class="tw"><table><thead><tr><th>周</th><th>天数</th><th>老服</th><th>601 确认到账</th><th>601 待核实</th><th>合计</th><th>比基线</th></tr></thead><tbody>${TA.weeks.map(w => { const t = w.old + w.n601, b = TA.baseline * w.days / 7; return `<tr${w.from >= N.start ? ' style="font-weight:600"' : ''}><td>${md(w.from)} ~ ${md(w.to)}</td><td>${w.days}</td><td>${fm(w.old)}</td><td>${w.from >= N.start ? fm(w.n601_paid ?? w.n601) : '—'}</td><td>${w.from >= N.start ? fm(w.n601_other || 0) : '—'}</td><td>${fm(t)}</td><td>${sgn(dpct(t, b))}</td></tr>`; }).join('')}</tbody></table></div>
-   <div class="note">不足 7 天的周,「比基线」按天数折算。评分、卡顿、支付失败数库里没有,暂不能并列</div></div>` : ''}`;
+   <details><summary class="link">按周汇总</summary><div class="tw"><table><thead><tr><th>周</th><th>天数</th><th>老服</th><th>601 确认到账</th><th>601 待核实</th><th>合计</th><th>比基线</th></tr></thead><tbody>${TA.weeks.map(w => { const t = w.old + w.n601, b = TA.baseline * w.days / 7; return `<tr${w.from >= N.start ? ' style="font-weight:600"' : ''}><td>${md(w.from)} ~ ${md(w.to)}</td><td>${w.days}</td><td>${fm(w.old)}</td><td>${w.from >= N.start ? fm(w.n601_paid ?? w.n601) : '—'}</td><td>${w.from >= N.start ? fm(w.n601_other || 0) : '—'}</td><td>${fm(t)}</td><td>${sgn(dpct(t, b))}</td></tr>`; }).join('')}</tbody></table></div>
+   </details><div class="note">不足 7 天的周,「比基线」按天数折算。评分、卡顿、支付失败数库里没有,暂不能并列</div></div>` : ''}`;
   const EV = n6ev(V);
   // 版本 / 投放 / 活动日历(2026-11-04):读趋势时当切点;趋势图上同样标出
   const thru = D.meta.data_through || '';
@@ -786,12 +786,14 @@ function n601Page(part){
    <div class="tw"><table><thead><tr><th>类型</th><th>名称</th><th>时间</th><th>状态</th><th>说明</th></tr></thead><tbody>${D.n601_events.map(e => `<tr><td>${esc(e.kind)}</td><td class="l">${esc(e.name)}</td><td class="l">${e.start ? esc(e.start) + (e.end ? ' ~ ' + esc(e.end) : '') : '—'}</td><td>${evState(e)}</td><td class="l note">${esc(e.note || '')}</td></tr>`).join('')}</tbody></table></div></div>` : '';
   // 逐日趋势(2026-11-05,老板要求):核心指标每天一张小图,共用日期轴,从内测开始,不随时间筛选;版本和活动标在图上
   const VT = V;
+  // 2026-11-05 图内维度按钮(用户:图内可切国家等维度);选了顶部平台 / 国家 / 版本筛选时不显示(数据只算了全部玩家)
+  const dimSeg = (id, dims) => N.trend_dims && !N.trend_dims.error && !SEG ? `<span class="seg" id="${id}-seg" style="margin-left:4px">${dims.map((d, i) => `<button aria-pressed="${i === 0}" data-v="${d}">${d}</button>`).join('')}</span>` : '';
   const sTrend = `<h2>逐日趋势<span class="note" style="font-weight:400"> · 从内测开始,不随时间筛选</span></h2>
   <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
-   <div class="card"><h3>新建角色</h3><div class="sub">按注册日;广告安装 = 埋点来源是 Facebook / Instagram、没有广告 ID 的新号</div><div class="chart" style="height:180px"><canvas id="c-trreg"></canvas></div></div>
-   <div class="card"><h3>活跃(活跃痕迹)</h3><div class="sub">当天有任务、签到、付款、登录等痕迹的人</div><div class="chart" style="height:180px"><canvas id="c-tract"></canvas></div></div>
+   <div class="card"><h3>新建角色</h3><div class="sub">按注册日;广告安装 = 埋点来源是 Facebook / Instagram、没有广告 ID 的新号 ${dimSeg('c-trreg', ['合计', '来源', '平台', '国家'])}</div><div class="chart" style="height:180px"><canvas id="c-trreg"></canvas></div></div>
+   <div class="card"><h3>活跃(活跃痕迹)</h3><div class="sub">当天有任务、签到、付款、登录等痕迹的人 ${dimSeg('c-tract', ['合计', '来源', '平台', '国家'])}</div><div class="chart" style="height:180px"><canvas id="c-tract"></canvas></div></div>
    <div class="card"><h3>D1 留存 · 按注册日</h3><div class="sub">只画已满 1 天的注册日;每天人数少,单日波动大,悬停看分子分母</div><div class="chart" style="height:180px"><canvas id="c-trd1"></canvas></div></div>
-   <div class="card"><h3>充值:确认到账 / 待核实</h3><div class="sub">美元;待核实 = PayerMax 等没有到账状态的订单,不计入确认收入</div><div class="chart" style="height:180px"><canvas id="c-trrev"></canvas></div></div>
+   <div class="card"><h3>充值:确认到账 / 待核实</h3><div class="sub">美元;待核实 = PayerMax 等没有到账状态的订单,不计入确认收入;按维度拆时只看确认到账 ${dimSeg('c-trrev', ['合计', '渠道', '平台', '国家'])}</div><div class="chart" style="height:180px"><canvas id="c-trrev"></canvas></div></div>
    <div class="card"><h3>付费人数</h3><div class="sub">有已到账订单的人 / 下过单的人(含待核实)</div><div class="chart" style="height:180px"><canvas id="c-trpay"></canvas></div></div>
    <div class="card"><h3>每人每天游戏时长</h3><div class="sub">中位数,分钟;埋点(只覆盖同意采集的人,10-29 起)</div><div class="chart" style="height:180px"><canvas id="c-trmin"></canvas></div></div>
    <div class="card"><h3>启动到登录成功率</h3><div class="sub">按安装;当天开始启动的安装里登录成功的比例(埋点)</div><div class="chart" style="height:180px"><canvas id="c-trst"></canvas></div></div>
@@ -800,10 +802,12 @@ function n601Page(part){
   const PBN = {'facebook-http-accepted':'服务端已发给 Meta(已接受)', 'meta-route-held':'交给客户端 Meta SDK 发送', 'skipped-no-attribution':'没有归因,未发'};
   const sPost = PBk ? `<div class="card"><h3>付费回传 Meta · 状态</h3><div class="sub">${esc(N.start)} 以来 601 付费回传记录,按回传状态;10-29 起改由客户端 Meta SDK 发送,发送结果不回写库,要以 Meta 后台为准。同期确认到账订单 ${fi(PBk.paid_orders)} 笔(回传记录含测试单,两者不是一一对应)。PayerMax 网页支付没有回传记录</div>
    <div class="tw"><table><thead><tr><th>回传状态</th><th>记录数</th></tr></thead><tbody>${Object.entries(PBk.total).map(([k, v]) => `<tr><td class="l">${esc(PBN[k] || k)}</td><td>${fi(v)}</td></tr>`).join('')}</tbody></table></div>
-   <details><summary class="link">按天</summary><div class="tw"><table><thead><tr><th>日期</th>${Object.keys(PBN).map(k => `<th>${esc(PBN[k])}</th>`).join('')}</tr></thead><tbody>${PBk.daily.map(x => `<tr><td>${md(x.d)}</td>${Object.keys(PBN).map(k => `<td>${fi(x[k] || 0)}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details></div>` : '';
+   <div class="chart" style="height:180px"><canvas id="c-n6pb"></canvas></div>
+   <details><summary class="link">按天明细</summary><div class="tw"><table><thead><tr><th>日期</th>${Object.keys(PBN).map(k => `<th>${esc(PBN[k])}</th>`).join('')}</tr></thead><tbody>${PBk.daily.map(x => `<tr><td>${md(x.d)}</td>${Object.keys(PBN).map(k => `<td>${fi(x[k] || 0)}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details></div>` : '';
   const PW = N.pay_weeks, CKD = (N.checkout || {}).daily || [];
   const sPayTrend = `<h2>付费趋势<span class="note" style="font-weight:400"> · 从内测开始,不随时间筛选</span></h2><div class="grid">
-   ${PW ? `<div class="card"><h3>每周充值 · 按渠道</h3><div class="sub">每 7 天一周(从内测开始日切,最后一周按实际天数);Google / Apple 为确认到账,待核实主要是 PayerMax。按天太稀,所以按周</div><div class="chart" style="height:200px"><canvas id="c-n6pw"></canvas></div></div>` : ''}
+   <div class="card"><h3>每日充值 · 按渠道</h3><div class="sub">美元;Google / Apple 为确认到账,待核实主要是 PayerMax;很多天是 0,线 = 确认到账 7 天平均</div><div class="chart" style="height:200px"><canvas id="c-n6pw"></canvas></div></div>
+   <div class="card"><h3>每日订单 · 按状态</h3><div class="sub">笔数,和「订单状态分层」同口径、各层互斥;测试 = 测试号 + 测试卡 / 沙盒</div><div class="chart" style="height:200px"><canvas id="c-n6os"></canvas></div></div>
    ${CKD.length ? `<div class="card"><h3>点击付费 → 下单 → 到账 · 按天</h3><div class="sub">Google / Apple 内购;点击 = 在游戏里发起支付的人,下单 = 拿到订单号的人,到账 = 当天有已到账订单的人。PayerMax 网页支付不经过这一步</div><div class="chart" style="height:200px"><canvas id="c-n6ck"></canvas></div></div>` : ''}
   </div>`;
   const OL = N.order_layers;
@@ -824,7 +828,7 @@ function n601Page(part){
     n6dq:  [intro('客户端性能和数据本身的可靠性:加载与帧率、请求失败与异常、埋点覆盖与字段质量。本页始终是全部玩家,不随平台、国家、版本筛选。'), kp('coverage'), EV.techPerf, EV.dq]};
   // 2026-11-04 口径标签(用户需求 4.2「强制展示」):每张卡标数据来自哪类口径,按卡片标题前缀匹配
   const SRC_TAG = {
-    '服务端': ['每日新增角色', '回流用户与新用户切分', '老服大 R 进入 601', '新手引导', '主城 Lv2', '每天各主城等级', '等级成长速度', '主城等级分布', '各建筑 / 英雄等级', '玩法参与', '成就完成', '活动参与', '宠物竞猜与老虎机', '渠道构成', '已剔除的订单', '商品构成', '点击付费漏斗', '按天', '付费玩家', '玩家手里的钻石', '周付费', '订单状态分层', '每周充值', '点击付费 → 下单', '新建角色', '充值:确认到账', '付费人数', '付费回传 Meta'],
+    '服务端': ['每日新增角色', '回流用户与新用户切分', '老服大 R 进入 601', '新手引导', '主城 Lv2', '每天各主城等级', '等级成长速度', '主城等级分布', '各建筑 / 英雄等级', '玩法参与', '成就完成', '活动参与', '宠物竞猜与老虎机', '渠道构成', '已剔除的订单', '商品构成', '点击付费漏斗', '按天', '付费玩家', '玩家手里的钻石', '周付费', '每日付费:老服', '订单状态分层', '每日充值', '每日订单', '点击付费 → 下单', '新建角色', '充值:确认到账', '付费人数', '付费回传 Meta'],
     '埋点下限': ['安装 → 登录', '每日启动漏斗', '启动各阶段耗时', '启动失败', '客户端版本', '注册当天游戏时长', '建筑升级怎么完成', '引导步骤 · 埋点', '建筑升级 · 按类型', '单次会话时长', '一天里什么时候在玩', '每人每天游戏时长', '商店 → 付费', '从哪里进商店', '每天打开商店', '页面加载耗时', '战斗帧率', '关键请求失败', '客户端异常', '每天埋点覆盖', '字段可用性', '各事件条数', '新安装按来源', '各来源合计', '注册后多久到主城 Lv3', '页面加载耗时 · 按天', '战斗低于 30 帧', '每人每天游戏时长', '启动到登录成功率', '会话结束时停在', '会话怎么结束', '启动与加载 · 按系统版本'],
     '代理': ['活跃(活跃痕迹)', 'D1 留存 · 按注册日', '每日活跃', '留存:老服账号 vs 新建号', '新人留存:按来源', '按注册日 × 来源', '新人前 7 天 · 按来源'],
     '混合': ['新人前 7 天 · 逐日', '建角色 → 付费', '留存双轨', '每日明细', '老服账号近 3 日活跃', '老服账号每日活跃', '新账号按建号时的版本'],
@@ -852,11 +856,27 @@ function n601Page(part){
       mkChart('c-trmin', {evDates:SD.map(r => r.d), type:'line', data:{labels:SD.map(r => md(r.d)), datasets:[{label:'中位数(分钟)', data:SD.map(r => r.min_p50), borderColor:css('--accent'), borderWidth:2, pointRadius:2}]}, options:{plugins:{legend:{display:false}}, scales:{x:{}, y:{beginAtZero:true}}}});
       mkChart('c-trst', {evDates:SU.map(r => r.d), type:'line', data:{labels:SU.map(r => md(r.d)), datasets:[{label:'登录成功率', data:SU.map(r => r.resources ? r.ready / r.resources : null), borderColor:css('--accent'), borderWidth:2, pointRadius:2}]},
         options:{plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c) => `${fp(c.raw, 0)}(${SU[c.dataIndex].ready}/${SU[c.dataIndex].resources})`}}}, scales:{x:{}, y:{beginAtZero:true, max:1, ticks:{callback:(v) => Math.round(v*100) + '%'}}}}}); } }
-  if (PW) mkChart('c-n6pw', {type:'bar', data:{labels:PW.map(w => md(w.from) + (w.days < 7 ? `(${w.days} 天)` : '')), datasets:[{label:'Google 确认到账', data:PW.map(w => w.Google), backgroundColor:css('--gold'), borderRadius:2, stack:'s'},
-    {label:'Apple 确认到账', data:PW.map(w => w.Apple), backgroundColor:css('--slate'), borderRadius:2, stack:'s'}, {label:'待核实', data:PW.map(w => w.pending), backgroundColor:'rgba(201,150,40,0.35)', borderColor:css('--gold'), borderWidth:1, borderRadius:2, stack:'s'}]}, options:{scales:{x:{stacked:true}, y:{stacked:true, beginAtZero:true}}}});
+  { const TD = N.daily, tl = TD.map(r => md(r.d)), tdd = TD.map(r => r.d), stk = {x:{stacked:true}, y:{stacked:true, beginAtZero:true}};
+    mkChart('c-n6pw', {evDates:tdd, data:{labels:tl, datasets:[{type:'bar', label:'Google 确认到账', data:TD.map(r => r.paid_google || 0), backgroundColor:css('--gold'), borderRadius:2, stack:'s'},
+      {type:'bar', label:'Apple 确认到账', data:TD.map(r => r.paid_apple || 0), backgroundColor:css('--slate'), borderRadius:2, stack:'s'},
+      {type:'bar', label:'待核实', data:TD.map(r => Math.max(0, (r.usd || 0) - (r.paid_usd || 0))), backgroundColor:'rgba(201,150,40,0.35)', borderColor:css('--gold'), borderWidth:1, borderRadius:2, stack:'s'},
+      {type:'line', label:'确认到账 7 天平均', data:ma(TD.map(r => r.paid_usd || 0), 7), borderColor:css('--accent'), borderWidth:1.5, pointRadius:0, stack:'l'}]}, options:{scales:stk}});
+    mkChart('c-n6os', {evDates:tdd, type:'bar', data:{labels:tl, datasets:[['ord_paid', '确认到账', css('--gold')], ['ord_pending', '待核实 / 未确认', 'rgba(201,150,40,0.35)'], ['ord_test', '测试', css('--slate')], ['ord_refund', '退款', css('--bad')]]
+      .map(([k, l, c]) => ({label:l, data:TD.map(r => r[k] || 0), backgroundColor:c, borderRadius:2, stack:'s'}))}, options:{scales:{x:{stacked:true}, y:{stacked:true, beginAtZero:true, ticks:{precision:0}}}}}); }
+  if (PBk) { const days_ = N.daily.map(r => r.d), byd = Object.fromEntries(PBk.daily.map(x => [x.d, x]));
+    mkChart('c-n6pb', {evDates:days_, type:'bar', data:{labels:days_.map(md), datasets:Object.keys(PBN).map((k, i) => ({label:PBN[k], data:days_.map(d => (byd[d] || {})[k] || 0), backgroundColor:[css('--good'), css('--accent'), css('--slate')][i], borderRadius:2, stack:'s'}))},
+      options:{scales:{x:{stacked:true}, y:{stacked:true, beginAtZero:true, ticks:{precision:0}}}}}); }
   if (CKD.length) { const i0 = CKD.findIndex(r => r.clicks), cd = i0 < 0 ? CKD : CKD.slice(i0);
     mkChart('c-n6ck', {evDates:cd.map(r => r.d), type:'line', data:{labels:cd.map(r => md(r.d)), datasets:[{label:'点击付费的人', data:cd.map(r => r.click_users), borderColor:css('--accent'), borderWidth:2, pointRadius:2},
       {label:'下单的人', data:cd.map(r => r.order_users), borderColor:css('--slate'), borderWidth:2, pointRadius:2}, {label:'到账的人', data:cd.map(r => r.paid_users), borderColor:css('--gold'), borderWidth:2, pointRadius:2}]}, options:{scales:{x:{}, y:{beginAtZero:true, ticks:{precision:0}}}}}); }
+  // 维度切换:选「合计」画原图,其他维度画按天堆叠柱
+  if (N.trend_dims && !N.trend_dims.error && !SEG) { const TDm = N.trend_dims, dlab = N.daily.map(r => md(r.d)), dds = N.daily.map(r => r.d), pal = [css('--accent'), css('--gold'), css('--slate'), css('--violet'), css('--good'), css('--bad'), 'rgba(120,120,140,0.5)'];
+    [['c-trreg', 'reg'], ['c-tract', 'act'], ['c-trrev', 'rev']].forEach(([id, key]) => { const segEl = $(id + '-seg'); if (!segEl) return; const ch0 = Chart.getChart($(id)), cfg0 = ch0 ? {type:ch0.config.type, data:ch0.config.data, options:ch0.config.options, plugins:ch0.config.plugins} : null;
+      segEl.querySelectorAll('button').forEach(b => b.onclick = () => { segEl.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); const ex = Chart.getChart($(id)); if (ex) ex.destroy();
+        if (b.dataset.v === '合计') { if (cfg0) new Chart($(id), cfg0); charts.push(Chart.getChart($(id))); return; }
+        const ser = (TDm[key] || {})[b.dataset.v] || {}, ks = Object.keys(ser).filter(k => ser[k].some(v => v));
+        mkChart(id, {evDates:dds, type:'bar', data:{labels:dlab, datasets:ks.map((k, i) => ({label:b.dataset.v === '国家' && !k.startsWith('其他') ? cname(k) : k, data:ser[k], backgroundColor:pal[i % pal.length], borderRadius:2, stack:'s'}))},
+          options:{scales:{x:{stacked:true}, y:{stacked:true, beginAtZero:true}}}}); }); }); }
   mkChart('c-n6reg', {evDates:N.daily.map(r=>r.d), type:'bar', data:{labels:N.daily.map(r => md(r.d)), datasets:[{label:'新建号', data:N.daily.map(r=>r.reg_new), backgroundColor:acc, borderRadius:3}, {label:'老服账号', data:N.daily.map(r=>r.reg_old), backgroundColor:gold, borderRadius:3}]}, options:{scales:stack}});
   mkChart('c-n6act', {evDates:N.daily.map(r=>r.d), type:'bar', data:{labels:N.daily.map(r => md(r.d)), datasets:[{label:'新建号', data:N.daily.map(r=>r.act_new), backgroundColor:acc, borderRadius:3}, {label:'老服账号', data:N.daily.map(r=>r.act_old), backgroundColor:gold, borderRadius:3}]}, options:{scales:stack}});
   if (M) { const mg = M.daily, si = mg.findIndex(r => r.n601 != null);
@@ -868,13 +888,14 @@ function n601Page(part){
         g.save(); g.strokeStyle = css('--muted'); g.setLineDash([4,4]); g.beginPath(); g.moveTo(x, a.top); g.lineTo(x, a.bottom); g.stroke(); g.restore(); }}]}); }
   const cd = N.progress.all.city_dist;
   mkChart('c-n6city', {type:'bar', data:{labels:cd.map(x => '主城 ' + x[0]), datasets:[{label:'近 3 天登录过', data:cd.map(x=>x[2]), backgroundColor:acc, borderRadius:3}, {label:'近 3 天没登录', data:cd.map(x=>x[1]-x[2]), backgroundColor:css('--accent-soft'), borderColor:acc, borderWidth:1, borderRadius:3}]}, options:{scales:stack}});
-  if (TA) { const wk = TA.weeks;
-    mkChart('c-n6wk', {data:{labels:wk.map(w => md(w.from) + (w.days < 7 ? `(${w.days} 天)` : '')), datasets:[
-      {type:'bar', label:'老服', data:wk.map(w => w.old), backgroundColor:slate, borderRadius:3, stack:'s'},
-      {type:'bar', label:'601 确认到账', data:wk.map(w => w.n601_paid ?? w.n601), backgroundColor:gold, borderRadius:3, stack:'s'},
-      {type:'bar', label:'601 待核实', data:wk.map(w => w.n601_other || 0), backgroundColor:'rgba(201,150,40,0.35)', borderColor:gold, borderWidth:1, borderRadius:3, stack:'s'},
-      {type:'line', label:'基线(按天数折算)', data:wk.map(w => TA.baseline * w.days / 7), borderColor:acc, borderWidth:1.5, borderDash:[5,4], pointRadius:0, stack:'l1'},
-      {type:'line', label:'目标 = 基线 × 1.5', data:wk.map(w => TA.baseline * 1.5 * w.days / 7), borderColor:css('--good'), borderWidth:1.5, borderDash:[2,3], pointRadius:0, stack:'l2'}]},
+  if (TA && TA.daily) { const td = TA.daily, b1 = TA.baseline / 7, tot = td.map(r => r.old + r.n601_paid + r.n601_other);
+    mkChart('c-n6wk', {evDates:td.map(r => r.d), data:{labels:td.map(r => md(r.d)), datasets:[
+      {type:'bar', label:'老服', data:td.map(r => r.old), backgroundColor:slate, borderRadius:2, stack:'s'},
+      {type:'bar', label:'601 确认到账', data:td.map(r => r.n601_paid), backgroundColor:gold, borderRadius:2, stack:'s'},
+      {type:'bar', label:'601 待核实', data:td.map(r => r.n601_other), backgroundColor:'rgba(201,150,40,0.35)', borderColor:gold, borderWidth:1, borderRadius:2, stack:'s'},
+      {type:'line', label:'合计 7 天平均', data:ma(tot, 7), borderColor:css('--violet'), borderWidth:2, pointRadius:0, stack:'l0'},
+      {type:'line', label:'基线(每天)', data:td.map(() => b1), borderColor:acc, borderWidth:1.5, borderDash:[5,4], pointRadius:0, stack:'l1'},
+      {type:'line', label:'目标 = 基线 × 1.5', data:td.map(() => b1 * 1.5), borderColor:css('--good'), borderWidth:1.5, borderDash:[2,3], pointRadius:0, stack:'l2'}]},
       options:{scales:{x:{stacked:true}, y:{stacked:true, beginAtZero:true}}}}); }
   EV.charts(); bindInfo(); bindLinks();
 }
@@ -902,12 +923,12 @@ function n6ev(V){
   <div class="card"><h3>每日启动漏斗(按安装)</h3><div class="sub">每天完成各启动阶段的安装数,和当天登录成功的安装数</div><div class="chart"><canvas id="c-n6st"></canvas></div>
    <div class="tw" style="max-height:300px"><table><thead><tr><th>日期</th>${N6ST.map(x => `<th>${x[1]}</th>`).join('')}<th>登录成功</th><th>启动失败</th><th>失败后没登录上</th></tr></thead><tbody>${S.daily.filter(r => r.resources || r.failed).map(r => `<tr><td>${md(r.d)}</td>${N6ST.map(x => `<td>${fi(r[x[0]])}</td>`).join('')}<td>${fi(r.ready)}</td><td>${fi(r.failed)}</td><td>${fi(r.failed_never_ready)}</td></tr>`).join('')}</tbody></table></div></div>
   <div class="grid">
-   <div class="card"><h3>启动各阶段耗时</h3><div class="sub">每次完成该阶段记一条;秒</div>
+   <div class="card"><h3>启动各阶段耗时</h3><div class="sub">每次完成该阶段记一条;秒。上图是每天各阶段的中位数,下表是全部期间</div><div class="chart" style="height:180px"><canvas id="c-n6sgd"></canvas></div>
     <div class="tw"><table><thead><tr><th>阶段</th><th>次数</th><th>中位数</th><th>90% 分位</th></tr></thead><tbody>${S.stage_ms.map(x => `<tr><td class="l">${esc(x.stage)}</td><td>${fi(x.n)}</td><td>${x.p50 == null ? '—' : (x.p50/1000).toFixed(1)}</td><td>${x.p90 == null ? '—' : (x.p90/1000).toFixed(1)}</td></tr>`).join('')}</tbody></table></div></div>
    <div class="card"><h3>启动失败</h3><div class="sub">按失败阶段和错误类型;安装数 = 出现过这种失败的安装。失败时的网络:${Object.entries(S.network).map(([k,v]) => `${esc({local_area:'Wi-Fi / 局域网', carrier_data:'移动数据', unknown:'未知'}[k] || k)} ${v}`).join(' · ')}</div>
     <div class="tw"><table><thead><tr><th>阶段</th><th>错误</th><th>次数</th><th>安装数</th></tr></thead><tbody>${S.fail.map(x => `<tr><td class="l">${esc(x.stage)}</td><td>${esc(x.err)}</td><td>${fi(x.n)}</td><td>${fi(x.installs)}</td></tr>`).join('') || '<tr><td colspan="4">无</td></tr>'}</tbody></table></div></div>
   </div>
-  <div class="card"><h3>客户端版本</h3><div class="sub">每个版本的安装数、开始启动的安装、其中登录成功的安装;只列 ≥ 3 个安装的版本</div>
+  <div class="card"><h3>客户端版本</h3><div class="sub">上图:每天各版本的安装数(安装最多的 5 个版本,其余并入「其他」);下表:每个版本的安装数、开始启动的安装、其中登录成功的安装,只列 ≥ 3 个安装的版本</div><div class="chart" style="height:200px"><canvas id="c-n6vd"></canvas></div>
    <div class="tw"><table><thead><tr><th>版本</th><th>安装</th><th>开始启动</th><th>登录成功</th><th>登录成功率</th><th>内测玩家</th><th>出现日期</th></tr></thead><tbody>${vt.map(x => `<tr><td>${esc(x.v)}</td><td>${fi(x.installs)}</td><td>${fi(x.started)}</td><td>${fi(x.ready)}</td><td>${x.started ? fp(x.ready / x.started, 0) : '—'}</td><td>${fi(x.users)}</td><td>${esc(x.first)} ~ ${esc(x.last)}</td></tr>`).join('')}</tbody></table></div></div>
   <h2>加载与帧率</h2>
   <div class="grid">
@@ -945,7 +966,7 @@ function n6ev(V){
   const lastCard = `<div class="grid">
    <div class="card"><h3>会话结束时停在哪个界面</h3>${lsn ? `<div class="sub">每次会话结束时所在的界面(内测玩家),共 ${fi(lsn)} 次会话带界面信息(B72 起才有);每个界面停留多久要等离开界面事件(E131)发版</div>
     <div class="tw"><table><thead><tr><th>界面</th><th>会话数</th><th>占比</th></tr></thead><tbody>${Object.entries(ls).map(([k, v]) => `<tr><td class="l">${esc(SCN[k] || k)}</td><td>${fi(v)}</td><td>${fp(v / lsn, 0)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">还没有界面信息:B72(2.4.0053)起才上报</div>'}</div>
-   <div class="card"><h3>会话怎么结束</h3><div class="sub">共 ${fi(ern)} 次会话(内测玩家)</div>
+   <div class="card"><h3>会话怎么结束</h3><div class="sub">共 ${fi(ern)} 次会话(内测玩家);上图每天,下表全部期间</div><div class="chart" style="height:180px"><canvas id="c-n6end"></canvas></div>
     <div class="tw"><table><thead><tr><th>结束方式</th><th>会话数</th><th>占比</th></tr></thead><tbody>${Object.entries(er).map(([k, v]) => `<tr><td class="l">${esc(ENDN[k] || k)}</td><td>${fi(v)}</td><td>${fp(v / ern, 0)}</td></tr>`).join('')}</tbody></table></div></div>
   </div>`;
   const LDD = (V.loads_daily || []).filter(r => r.n), FPD = (V.fps_daily || []).filter(r => r.n);
@@ -979,7 +1000,7 @@ function n6ev(V){
    <div class="card"><h3>注册当天游戏时长 × 次日回来</h3><div class="sub">只算注册当天有埋点、已满 1 天的内测玩家;次日回来 = 次日有埋点或每日任务记录。只是相关,不代表时长长就能留下</div>
     <div class="tw"><table><thead><tr><th>注册当天时长</th><th>人数</th><th>次日回来</th></tr></thead><tbody>${V.first_day.map(x => `<tr><td>${esc(x.name)}</td><td>${fi(x.n)}</td><td>${pc(x.d1, x.n)}</td></tr>`).join('')}</tbody></table></div>
     <div class="note">人数少,比例只作参考</div></div>
-   <div class="card"><h3>建筑升级怎么完成</h3><div class="sub">埋点里所有建筑升级(${fi(B.n)} 次,${fi(B.users)} 位内测玩家);免费立即完成 = 剩余时间在 VIP 免费时长内</div><div class="chart"><canvas id="c-n6bm"></canvas></div>
+   <div class="card"><h3>建筑升级怎么完成 · 每天</h3><div class="sub">埋点里所有建筑升级(${fi(B.n)} 次,${fi(B.users)} 位内测玩家),每天按完成方式拆;免费立即完成 = 剩余时间在 VIP 免费时长内</div><div class="chart"><canvas id="c-n6bm"></canvas></div>
     <div class="note">升级受阻(资源不足)${fi(B.blocked)} 次;成长资源不足:${B.shortage.map(x => `${esc({building:'建筑', equipment_refine:'装备精炼', hero_magic:'英雄法术', hero_level:'英雄升级'}[x[0]] || x[0])} ${x[1]}`).join(' · ') || '无'}</div></div>
   </div>`;
   const PH = V.palace_hist;
@@ -1045,7 +1066,8 @@ function n6ev(V){
       {type:'line', label:'每人时长中位数(分钟)', data:md_.map(r => r.min_p50), borderColor:gold, borderWidth:2, pointRadius:2, yAxisID:'y'},
       {type:'line', label:'每人时长平均(分钟)', data:md_.map(r => r.min_mean), borderColor:vio, borderWidth:1.5, borderDash:[4,3], pointRadius:0, yAxisID:'y'}]},
       options:{scales:{x:{}, y:{beginAtZero:true, position:'left'}, y1:{beginAtZero:true, position:'right', grid:{display:false}}}}});
-    mkChart('c-n6bm', {type:'bar', data:{labels:B.method.map(x => x[0]), datasets:[{label:'次数', data:B.method.map(x => x[1]), backgroundColor:acc, borderRadius:3}]}, options:{indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}, y:{}}}});
+    { const bd = (B.daily || []).filter(r => r.n), ks = Object.values(N6DONE);
+      mkChart('c-n6bm', {evDates:bd.map(r => r.d), type:'bar', data:{labels:bd.map(r => md(r.d)), datasets:ks.map((k, i) => ({label:k, data:bd.map(r => r[k] || 0), backgroundColor:[acc, slate, gold, vio][i % 4], borderRadius:2, stack:'s'}))}, options:{scales:stack}}); }
     if (PH) { const cols = [slate, soft, acc, gold, good];
       mkChart('c-n6ph', {type:'bar', data:{labels:PH.rows.map(r => md(r[0])), datasets:PH.bands.map((b, i) => ({label:'主城 ' + b, data:PH.rows.map(r => r[i+1]), backgroundColor:cols[i], borderColor:acc, borderWidth:i === 1 ? 1 : 0}))}, options:{scales:stack}}); }
     if (G.petquiz || G.slot) { const pd = (G.petquiz || G.slot).daily, i0 = pd.findIndex((r, i) => r.rounds || ((G.slot||{}).daily||[])[i]?.rounds), dd = i0 < 0 ? pd : pd.slice(i0);
@@ -1054,6 +1076,12 @@ function n6ev(V){
     const shd = SH.daily.filter(r => r.ev_users);
     mkChart('c-n6shop', {evDates:shd.map(r=>r.d), type:'bar', data:{labels:shd.map(r => md(r.d)), datasets:[{label:'埋点里的内测玩家', data:shd.map(r => r.ev_users), backgroundColor:soft, borderColor:acc, borderWidth:1, borderRadius:3}, {label:'其中打开过商店', data:shd.map(r => r.open_users), backgroundColor:acc, borderRadius:3}]}, options:{scales:{x:{}, y:{beginAtZero:true}}}});
     if (DI) mkChart('c-n6dia', {type:'bar', data:{labels:DI.dist.map(x => x[0] + ' 钻'), datasets:[{label:'人数', data:DI.dist.map(x => x[1]), backgroundColor:gold, borderRadius:3}]}, options:{plugins:{legend:{display:false}}, scales:{x:{}, y:{beginAtZero:true}}}});
+    { const VD = V.ver_daily, vr = VD ? VD.rows.filter(r => VD.keys.some(k => r[k])) : [];
+      if (vr.length) mkChart('c-n6vd', {evDates:vr.map(r => r.d), type:'bar', data:{labels:vr.map(r => md(r.d)), datasets:VD.keys.map((k, i) => ({label:k, data:vr.map(r => r[k]), backgroundColor:[acc, gold, slate, vio, good, 'rgba(120,120,140,0.5)'][i % 6], borderRadius:2, stack:'s'}))}, options:{scales:stack}});
+      const SG = (V.stage_daily || []).filter(r => N6ST.some(x => r[x[1]] != null));
+      if (SG.length) mkChart('c-n6sgd', {evDates:SG.map(r => r.d), type:'line', data:{labels:SG.map(r => md(r.d)), datasets:N6ST.map((x, i) => ({label:x[1], data:SG.map(r => r[x[1]]), borderColor:[acc, gold, slate, vio][i], borderWidth:2, pointRadius:2, spanGaps:true}))}, options:{scales:{x:{}, y:{beginAtZero:true}}}});
+      const ED = (V.end_daily || []).filter(r => Object.keys(r).length > 1 && Object.entries(r).some(([k, v]) => k !== 'd' && v)), ek = ['background', 'role_change', 'shutdown', 'recovered'], en = {background:'切到后台', role_change:'切换角色 / 账号', shutdown:'关闭游戏', recovered:'异常后恢复'};
+      if (ED.length) mkChart('c-n6end', {evDates:ED.map(r => r.d), type:'bar', data:{labels:ED.map(r => md(r.d)), datasets:ek.map((k, i) => ({label:en[k], data:ED.map(r => r[k] || 0), backgroundColor:[acc, gold, slate, bad][i], borderRadius:2, stack:'s'}))}, options:{scales:stack}}); }
     if (LDD.length) mkChart('c-n6ldd', {evDates:LDD.map(r => r.d), type:'line', data:{labels:LDD.map(r => md(r.d)), datasets:['主城', '世界地图', '战斗'].map((k, i) => ({label:k, data:LDD.map(r => r[k]), borderColor:[acc, gold, slate][i], borderWidth:2, pointRadius:2, spanGaps:true}))}, options:{scales:{x:{}, y:{beginAtZero:true}}}});
     if (FPD.length) mkChart('c-n6fpd', {evDates:FPD.map(r => r.d), type:'line', data:{labels:FPD.map(r => md(r.d)), datasets:[{label:'低于 30 帧', data:FPD.map(r => r.lt30 / r.n), borderColor:bad, borderWidth:2, pointRadius:2}]},
       options:{plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c) => `${fp(c.raw, 0)}(${FPD[c.dataIndex].lt30}/${FPD[c.dataIndex].n} 场)`}}}, scales:{x:{}, y:{beginAtZero:true, max:1, ticks:{callback:(v) => Math.round(v*100) + '%'}}}}});

@@ -2015,6 +2015,20 @@ def n601(c, only=None):
         row_['paid_usd'] = r(float(od_.paid_usd.sum()), 2) if 'paid_usd' in od_ else None
         row_['paid_payers'] = int(od_[od_.status == 'paid'].monetId.nunique())
         row_['reg_ad'] = int(((P.reg == d_) & (P.src == 'ad')).sum()) if 'src' in P else 0
+        # 2026-11-05 改按天(用户:按周看不出来):每天按渠道的确认到账、订单按状态分层(各层互斥,和「订单状态分层」同口径)
+        row_['paid_google'] = r(float(od_[od_.pay_ch == 'Google'].paid_usd.sum()), 2) if 'paid_usd' in od_ else 0
+        row_['paid_apple'] = r(float(od_[od_.pay_ch == 'Apple'].paid_usd.sum()), 2) if 'paid_usd' in od_ else 0
+        oa_ = O[O.d == d_]
+        row_['ord_paid'] = int((od_.status == 'paid').sum()); row_['ord_pending'] = int(od_.status.isin(['pending', 'unconfirmed']).sum())
+        row_['ord_test'] = int(oa_.why.isin(['清单内测试号']).sum() + oa_.why.fillna('').str.startswith('商店测试').sum())
+        row_['ord_refund'] = int((oa_.why == '已退款').sum())
+    # 两 App 合计按天(2026-11-05 改按天):内测开始前 14 天起;老服 = 老服订单(不含 601),601 拆确认到账 / 待核实;基线按天 = 周基线 ÷ 7
+    two_daily = []
+    for d_ in pd.date_range(start - pd.Timedelta(days=14), E):
+        od_ = Ok[Ok.d == d_]
+        two_daily.append({'d': d_.strftime('%Y-%m-%d'), 'old': r(float(c.O[(c.O.d == d_) & (c.O.server_id != 601)].price.sum()), 2),
+                          'n601_paid': r(float(od_.paid_usd.sum()), 2) if 'paid_usd' in od_ else 0.0, 'n601_other': r(float(od_.price.sum() - (od_.paid_usd.sum() if 'paid_usd' in od_ else 0)), 2)})
+    two_app['daily'] = two_daily
     # 渠道按周(2026-11-05 改趋势):每 7 天一周(从内测开始日切),各渠道确认到账 / 待核实
     pay_weeks = []
     for k_ in range(0, (E - start).days // 7 + 1):
@@ -2030,7 +2044,34 @@ def n601(c, only=None):
         postback = {'total': {k_: int(v) for k_, v in PB.groupby('disposition').n.sum().items()},
                     'daily': [{'d': d_, **{k_: int(v) for k_, v in g.set_index('disposition').n.items()}} for d_, g in PB.groupby('d')],
                     'paid_orders': int((Ok.status == 'paid').sum())}
-    return {'start': N601_START, 'end': E.strftime('%Y-%m-%d'), 'win': win, 'kpi': kpi, 'daily': daily, 'postback': postback, 'pay_weeks': pay_weeks, 'retention': retention, 'cohorts': cohorts,
+    # 逐日趋势的图内维度(2026-11-05,用户:图内可切国家等维度):新建角色 / 活跃按来源、平台、国家;确认到账按渠道、平台、国家。
+    # 只在全部玩家时算(选了顶部筛选时图内维度不显示);国家取人数最多的 5 个,其余并入「其他(含未知)」
+    trend_dims = None
+    if only is None:
+        try:
+            G6 = n601_segments(c).drop_duplicates('monetId').set_index('monetId')
+            SRCNM = {'fresh': '真新设备', 'repeat': '同设备重复新号', 'alt': '老玩家小号', 'direct': '旧号直接进', 'ad': '广告安装', 'noid': '无广告 ID'}
+            attr = pd.DataFrame({'monetId': P.monetId, '来源': P.src.map(SRCNM).fillna('其他') if 'src' in P else '全部'}).set_index('monetId')
+            attr['平台'] = G6.plat.reindex(attr.index).fillna('未知'); attr['国家'] = G6.country.reindex(attr.index).fillna('未知')
+            topc = [k for k in attr['国家'].value_counts().index if k != '未知'][:5]
+            attr['国家'] = attr['国家'].where(attr['国家'].isin(topc), '其他(含未知)')
+            dd = [pd.Timestamp(x['d']) for x in daily]
+            def split(df, dcol, val, dims):
+                X = df.join(attr, on='monetId')
+                out_ = {}
+                for dm in dims:
+                    if dm not in X: continue
+                    g = (X.groupby([dcol, dm]).monetId.nunique() if val is None else X.groupby([dcol, dm])[val].sum())
+                    keys = list(g.groupby(level=1).sum().sort_values(ascending=False).index)
+                    out_[dm] = {str(k): [round(float(g.get((d_, k), 0)), 2) for d_ in dd] for k in keys}
+                return out_
+            Okc = Ok.assign(渠道=Ok.pay_ch)
+            trend_dims = {'reg': split(P[['monetId', 'reg']], 'reg', None, ['来源', '平台', '国家']),
+                          'act': split(Act[['monetId', 'd']], 'd', None, ['来源', '平台', '国家']),
+                          'rev': split(Okc[['monetId', 'd', 'paid_usd', '渠道']], 'd', 'paid_usd', ['渠道', '平台', '国家'])}
+        except Exception as e_:
+            trend_dims = {'error': str(e_)[:200]}
+    return {'start': N601_START, 'end': E.strftime('%Y-%m-%d'), 'win': win, 'kpi': kpi, 'daily': daily, 'postback': postback, 'pay_weeks': pay_weeks, 'trend_dims': trend_dims, 'retention': retention, 'cohorts': cohorts,
             'progress': progress, 'levels': levels, 'gameplay': gameplay, 'migration': migration, 'device_groups': device_groups, 'origin': origin_rows, 'whale_entry': whale_entry, 'climb': climb,
             'hero_marks': hero_marks, 'two_app': two_app, 'guide': guide, 'city_reach': city_reach, 'reg_versions': reg_versions, 'order_layers': order_layers,
             'achievements': achievements, 'activities': activities, 'products': products, 'gift_intent': gift_intent, 'payers': payers, 'checkout': checkout,
@@ -2213,7 +2254,8 @@ def n601_client(c, N, w=None, seg=None):
              'method': [[N6_DONE.get(k, k), int(v)] for k, v in bu.completion_method.value_counts().items()],
              'by_type': [{'name': N6_BTYPE.get(int(k), str(k)), 'n': int(len(g)), **{N6_DONE.get(mm, mm): int((g.completion_method == mm).sum()) for mm in N6_DONE}}
                          for k, g in sorted(bu.groupby('building_type'), key=lambda kv: -len(kv[1]))],
-             'daily': [{'d': d_.strftime('%Y-%m-%d'), 'n': int((bu.d == d_).sum()), 'users': int(bu[bu.d == d_].user_id.nunique())} for d_ in days],
+             'daily': [{'d': d_.strftime('%Y-%m-%d'), 'n': int((bu.d == d_).sum()), 'users': int(bu[bu.d == d_].user_id.nunique()),
+                        **{N6_DONE.get(mm, mm): int(((bu.d == d_) & (bu.completion_method == mm)).sum()) for mm in N6_DONE}} for d_ in days],
              'blocked': int(len(ev('invader_building_upgrade_blocked'))),
              'shortage': [[str(k), int(v)] for k, v in ev('invader_growth_resource_shortage').growth_system.value_counts().items()]}
     # 商店
@@ -2346,6 +2388,14 @@ def n601_client(c, N, w=None, seg=None):
             rows_.append({'n': n_, 'base': len(base_), 'session': k_s, 'proxy': k_p, 'ci_s': wilson(k_s, len(base_)), 'ci_p': wilson(k_p, len(base_)),
                           'either': sum(((u, regs[u] + pd.Timedelta(days=n_)) in ses) or ((u, regs[u] + pd.Timedelta(days=n_)) in act_p) for u in base_)})
         dual = {'obs': len(obs), 'from': SE.d.min().strftime('%Y-%m-%d') if len(SE) else None, 'rows': rows_}
+    # 按天拆分(2026-11-05,用户:能按天的都按天):各版本每天的安装数(前 5 个版本,其余并入其他)、会话每天怎么结束、启动各阶段每天的耗时中位数
+    vtop = list(E_.groupby('client_version').install_md5.nunique().sort_values(ascending=False).index[:5])
+    ver_daily = {'keys': vtop + ['其他'], 'rows': [{'d': d_.strftime('%Y-%m-%d'), **{v_: int(E_[(E_.d == d_) & (E_.client_version == v_)].install_md5.nunique()) for v_ in vtop},
+                 '其他': int(E_[(E_.d == d_) & ~E_.client_version.isin(vtop)].install_md5.nunique())} for d_ in days]}
+    ssd = ev('invader_session_summary'); ssd = ssd[ssd.user_id.isin(ids)]
+    end_daily = [{'d': d_.strftime('%Y-%m-%d'), **{str(k): int(((ssd.d == d_) & (ssd.end_reason == k)).sum()) for k in ssd.end_reason.dropna().unique()}} for d_ in days]
+    stg = ev('invader_startup_stage_completed')
+    stage_daily = [{'d': d_.strftime('%Y-%m-%d'), **{nm: q(stg[(stg.d == d_) & (stg.stage == k)].duration_ms / 1000, .5) for k, nm in N6_STAGES}} for d_ in days]
     # 首日 Lv3(2026-11-05,用户需求 5.3B):B72 起建筑升级完成(E034)带 target_level 和时间;主城 = building_type 5。
     # 只看 11-04 及以后注册、且注册当天就有埋点的内测玩家(可观测),算注册后多久第一次升到主城 Lv3
     lv3 = None
@@ -2391,7 +2441,7 @@ def n601_client(c, N, w=None, seg=None):
     return {'palace_hist': palace, 'coverage': cov, 'startup': startup, 'versions': vers, 'sessions': sess, 'first_day': fd, 'loads': loads, 'fps': fps, 'loads_daily': loads_daily, 'fps_daily': fps_daily,
             'reqfail': reqfail, 'exceptions': [[str(k_), int(v)] for k_, v in exc.component.value_counts().items()], 'interrupted': int(len(bi)),
             'build': build, 'shop': shop, 'pay_chain': pay_chain, 'chain': chain, 'diamonds': dia, 'games': games, 'dq': dq, 'acq': acq,
-            'ret_dual': dual, 'steps': steps, 'lv3': lv3, 'os': osv, 'first7_daily': f7d}
+            'ret_dual': dual, 'steps': steps, 'lv3': lv3, 'os': osv, 'first7_daily': f7d, 'ver_daily': ver_daily, 'end_daily': end_daily, 'stage_daily': stage_daily}
 
 
 def n601_segments(c):
