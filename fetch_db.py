@@ -37,6 +37,36 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 HOST = os.environ.get('INVADER_DB_HOST', '192.168.50.14')
 LOG_PORT, PROD_PORT = 39995, 39998
+# 2026-11-05 老服登录卡增量抓取(用户确认):Login_user day 每次重抓近 150 天要约 8 分钟。改成本地缓存历史,
+# 平时只重抓最近 4 天(覆盖 Log 库晚到的记录),拼回去;每周一、缓存缺失或过旧、或设 INVADER_FULL_LOGIN=1 时完整重抓。
+# 校验:重抓窗口的第一天在缓存里也有,两边行数、登录记录数相差超过 0.5% 就放弃增量、当场完整重抓。缓存在 data/cache/(不进仓库)。
+LOGIN_CARD, LOGIN_RECENT_DAYS = 'Login_user day', 4
+LOGIN_CACHE = HERE / 'data' / 'cache' / 'login_user_day.json'
+
+def login_incremental_ok():
+    """能不能走增量:不是周一、没要求完整、缓存存在且截至日不早于 今天 - 5 天。返回 (可以, 缓存, 原因)。"""
+    if os.environ.get('INVADER_FULL_LOGIN') == '1': return False, None, '要求完整重抓'
+    if date.today().weekday() == 0: return False, None, '周一完整重抓'
+    if not LOGIN_CACHE.exists(): return False, None, '没有缓存'
+    c = json.loads(LOGIN_CACHE.read_text())
+    if not c.get('through') or c['through'] < (date.today() - timedelta(days=LOGIN_RECENT_DAYS + 1)).isoformat():
+        return False, None, f"缓存截至 {c.get('through')},太旧"
+    return True, c, ''
+
+def login_merge(cache, recent):
+    """缓存里重抓窗口之前的行 + 重抓的行;校验重抓窗口第一天两边一致。返回 (合并行, 问题)。"""
+    day0 = (date.today() - timedelta(days=LOGIN_RECENT_DAYS)).isoformat(); lo = (date.today() - timedelta(days=150)).isoformat()
+    old0 = [r for r in cache['rows'] if str(r['dateCN'])[:10] == day0]; new0 = [r for r in recent if str(r['dateCN'])[:10] == day0]
+    a, b = (len(old0), sum(int(r['login_records']) for r in old0)), (len(new0), sum(int(r['login_records']) for r in new0))
+    if not a[0] or abs(a[0] - b[0]) > 0.005 * a[0] or abs(a[1] - b[1]) > 0.005 * max(a[1], 1):
+        return None, f'{day0} 缓存 {a[0]} 行 / {a[1]} 条,重抓 {b[0]} 行 / {b[1]} 条,不一致'
+    keep = [r for r in cache['rows'] if lo <= str(r['dateCN'])[:10] < day0]
+    return keep + recent, ''
+
+def login_save_cache(rows, through, mode):
+    LOGIN_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    LOGIN_CACHE.write_text(json.dumps({'through': through, 'saved_at': datetime.now().isoformat(timespec='seconds'), 'mode': mode, 'rows': rows}, ensure_ascii=False))
+
 LIGHT_FROM_SQL = ['Revenue_today', 'N601_players detail', 'N601_activity tasks day', 'N601_checkout', 'N601_order status']   # 轻量刷新时重跑的现有小卡;2026-11-05 加到账状态(几十行,几秒),今天的 601 订单要用它剔测试卡
 
 def creds():
@@ -175,6 +205,14 @@ def main():
         sql = f.read_text()
         first = sql.splitlines()[0]
         kind = 'log' if 'db: log' in first else 'rs' if 'db: rs' in first else 'prod'
+        login_inc = None
+        if f.stem == LOGIN_CARD and not a.light:
+            ok_, cache_, why_ = login_incremental_ok()
+            if ok_:
+                inc_sql = sql.replace('dateCN >= CURDATE() - INTERVAL 150 DAY', f'dateCN >= CURDATE() - INTERVAL {LOGIN_RECENT_DAYS} DAY')
+                if inc_sql != sql: login_inc, sql = cache_, inc_sql
+            else:
+                print(f'  {LOGIN_CARD}:完整抓取({why_})', flush=True)
         # 2026-10-28:VPN 不稳时连接会被重置,每张卡失败后重新连接再试一次(只试一次,不反复打库)
         for attempt in (1, 2):
             t = time.time()
@@ -183,6 +221,18 @@ def main():
                 cur = conns[kind].cursor(); cur.execute(sql)
                 cols = [d[0] for d in cur.description]
                 rows = post_process(f.stem, [dict(zip(cols, map(jsonable, r))) for r in cur.fetchall()])
+                if f.stem == LOGIN_CARD and not a.light:
+                    if login_inc is not None:
+                        merged, prob = login_merge(login_inc, rows)
+                        if merged is None:   # 校验不过:当场完整重抓
+                            print(f'  {LOGIN_CARD}:增量校验不通过({prob}),改为完整抓取', flush=True)
+                            cur.execute(f.read_text()); rows = [dict(zip(cols, map(jsonable, r))) for r in cur.fetchall()]; mode_ = 'full'
+                        else:
+                            print(f'  {LOGIN_CARD}:增量,重抓近 {LOGIN_RECENT_DAYS} 天 {len(rows)} 行,拼接后 {len(merged)} 行', flush=True)
+                            rows, mode_ = merged, 'incremental'
+                    else:
+                        mode_ = 'full'
+                    login_save_cache(rows, out['data_through'], mode_)
                 out['metrics'][f.stem] = rows; out['errors'].pop(f.stem, None)
                 print(f'  OK  {f.stem}: {len(rows)} 行, {time.time()-t:.0f}s' + ('(重试成功)' if attempt == 2 else ''), flush=True)
                 break
