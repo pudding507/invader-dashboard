@@ -839,6 +839,70 @@ def gameplay(c):
 
 
 # ---------------------------------------------------------------- PvP
+# ---------------------------------------------------------------- 老服三项(2026-11-05,缺失清单 P1-5 / P1-7 / P2-8,用户确认上「老服」页签,只放数字)
+def old_invade(c):
+    """入侵结构按天(近 28 天):场次、NPC 城占比、打已被占的城占比、胜率;解救次数和被救人数。"""
+    X = pd.DataFrame(c.raw.get('PvP_invade extra daily', []))
+    if not len(X): return None
+    X['dateCN'] = X.dateCN.astype(str).str[:10]
+    B = X[X.kind == 'battle'].set_index('dateCN'); R = X[X.kind == 'release'].set_index('dateCN')
+    days = sorted(set(X.dateCN))
+    daily = [{'d': d, 'battles': int(B.n.get(d, 0)), 'attackers': int(B.users.get(d, 0)), 'wins': int(B.wins.get(d, 0)), 'npc': int(B.npc.get(d, 0)),
+              'on_occ': int(B.on_occ.get(d, 0)), 'release': int(R.n.get(d, 0)), 'released': int(R.on_occ.get(d, 0))} for d in days]
+    tot = {k: int(sum(x[k] for x in daily)) for k in ('battles', 'wins', 'npc', 'on_occ', 'release')}
+    # 11-05 核对:occupiedId = 0 的场次约 8.6%,含义不明,不算「已被占的城」(11-02 内部稿按 occupiedId ≠ 城主算,含这部分,所以是 55%)
+    return {'from': days[0], 'to': days[-1], 'daily': daily, 'total': tot}
+
+
+def old_resource_ledger(c):
+    """金币 / 水晶账本(近 28 天):应发、实际进账、溢出、花费;进账按来源取应发最多的前 8 个。"""
+    X = pd.DataFrame(c.raw.get('Resource_ledger daily', []))
+    if not len(X): return None
+    X['dateCN'] = X.dateCN.astype(str).str[:10]
+    for k_ in ('amount', 'actual'): X[k_] = X[k_].astype(float)
+    out = {'from': X.dateCN.min(), 'to': X.dateCN.max(), 'res': []}
+    for rt, nm in ((1, '金币'), (2, '水晶')):
+        I = X[(X.kind == 'in') & (X.resource_type == rt)]; O_ = X[(X.kind == 'out') & (X.resource_type == rt)]
+        src = I.groupby('source')[['amount', 'actual']].sum().sort_values('amount', ascending=False)
+        out['res'].append({'name': nm, 'issued': float(I.amount.sum()), 'actual': float(I.actual.sum()), 'spent': float(O_.amount.sum()),
+                           'daily': [{'d': d, 'actual': float(I[I.dateCN == d].actual.sum()), 'spent': float(O_[O_.dateCN == d].amount.sum())} for d in sorted(set(X.dateCN))],
+                           'sources': [{'src': str(k_), 'issued': float(v.amount), 'actual': float(v.actual)} for k_, v in src.head(8).iterrows()],
+                           'spend_top': [{'src': str(k_), 'spent': float(v)} for k_, v in O_.groupby('source').amount.sum().sort_values(ascending=False).head(8).items()]})
+    return out
+
+
+def old_new_device(c, days=150):
+    """老服新号按设备拆(近 150 天注册、注册后 7 天内在老服登录过):同一广告 ID 下有更早的号 = 老玩家小号;
+    有广告 ID 但设备上没有更早的号 = 全新设备;没取到广告 ID = 无法判断。广告 ID 只用 MD5;iOS 绝大多数没有广告 ID。"""
+    DV = pd.DataFrame(c.raw.get('N601_device ids', []))
+    if not len(DV): return None
+    E = c.end; A = c.A.copy()
+    A = A[[any((a, rg + pd.Timedelta(days=k)) in c.login_set for k in range(7)) for a, rg in zip(A.monetId, A.reg)]]
+    first_on = DV.groupby('device_hash').monetId.min()
+    hashes = DV.groupby('monetId').device_hash.apply(set)
+    def grp(mm):
+        if mm not in hashes.index: return 'noid'
+        return 'alt' if any(first_on[h] < mm for h in hashes[mm]) else 'fresh'
+    A['g'] = A.monetId.map(grp)
+    pay = c.O[c.O.server_id != 601]   # 老服订单
+    def stats(x):
+        r_ = {}
+        for n_ in (1, 7):
+            ok = x[x.reg + pd.Timedelta(days=n_) <= E]
+            k_ = sum((a, rg + pd.Timedelta(days=n_)) in c.login_set for a, rg in zip(ok.monetId, ok.reg))
+            r_[f'd{n_}'] = {'n': int(k_), 'base': int(len(ok))}
+        m30 = x[x.reg + pd.Timedelta(days=30) <= E]
+        pp = pay.merge(m30[['monetId', 'reg']], on='monetId'); pp = pp[pp.d < pp.reg + pd.Timedelta(days=30)]
+        r_['pay30'] = {'n': int(pp.monetId.nunique()), 'base': int(len(m30))}
+        return r_
+    rows = []
+    for g_, nm in (('fresh', '全新设备'), ('alt', '老玩家小号(同设备有更早的号)'), ('noid', '无广告 ID,无法判断')):
+        for plat in ('Android', 'iOS'):
+            x = A[(A.g == g_) & (A.plat == plat)]
+            if len(x): rows.append({'g': g_, 'name': nm, 'plat': plat, 'n': int(len(x)), **stats(x)})
+    return {'from': A.reg.min().strftime('%Y-%m-%d') if len(A) else None, 'n': int(len(A)), 'rows': rows}
+
+
 def pvp(c):
     PB = c.PB
     out = {}
@@ -2753,6 +2817,9 @@ def build(raw):
     DATA['money'] = safe(lambda: monetization(c), errors, 'money')
     DATA['gameplay'] = safe(lambda: gameplay(c), errors, 'gameplay')
     DATA['pvp'] = safe(lambda: pvp(c), errors, 'pvp')
+    DATA['old_invade'] = safe(lambda: old_invade(c), errors, 'old_invade')
+    DATA['old_ledger'] = safe(lambda: old_resource_ledger(c), errors, 'old_ledger')
+    DATA['old_newdev'] = safe(lambda: old_new_device(c), errors, 'old_newdev')
     DATA['alliance'] = safe(lambda: alliance(c), errors, 'alliance')
     DATA['geo'] = safe(lambda: geo(c, DATA), errors, 'geo')
     DATA['srv'] = safe(lambda: by_server(c, errors), errors, 'srv') or {}

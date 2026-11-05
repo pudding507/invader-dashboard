@@ -1319,7 +1319,36 @@ function draw(){
   if (N6.includes(S.tab)) $('stamp').textContent = `601 数据截至 ${END} · 中国时间 · 更新于 ${(D.meta.run_at||'').replace('T',' ').slice(0,16)}`;
   ({home, newuser, life, game, pvp:pvpPage, ally:allyPage, money, geo:geoPage, alerts, defs,
     n601:() => n601Page('n601'), n6tech:() => n601Page('n6tech'), n6first:() => n601Page('n6first'), n6new:() => n601Page('n6new'), n6grow:() => n601Page('n6grow'), n6pay:() => n601Page('n6pay'), n6dq:() => n601Page('n6dq')})[S.tab]();
+  oldExtra(S.tab);
   if (stale) $('root').insertAdjacentHTML('afterbegin', stale);
+}
+// 2026-11-05 老服三项(缺失清单 P1-5 / P1-7 / P2-8,用户确认上「老服」页签;只放数字,内部稿的结论不搬):
+// 入侵结构 → PvP 页;金币 / 水晶账本 → 商业化页;新号按设备拆 → 新用户页。全部老服、不随筛选
+function oldExtra(tab){
+  const sec = $('root').querySelector('section'); if (!sec) return;
+  const big = (v) => v == null ? '—' : v >= 1e12 ? (v / 1e12).toFixed(2) + ' 万亿' : v >= 1e8 ? (v / 1e8).toFixed(1) + ' 亿' : fi(v);
+  const pcx = (k, n) => n ? `${fp(k / n, 0)}<span class="note"> ${fi(k)}/${fi(n)}</span>` : '—';
+  const NOTE = '<span class="note" style="font-weight:400"> · 全部老服,不随筛选</span>';
+  if (tab === 'pvp' && D.old_invade) { const X = D.old_invade, T = X.total;
+    sec.insertAdjacentHTML('beforeend', `<h2>入侵结构 · 近 28 天${NOTE}</h2><div class="card"><h3>入侵、占领与解救 · 按天</h3><div class="sub">${md(X.from)} ~ ${md(X.to)}。打 NPC 城 = 城主号 ≥ 10 亿;打已被占的城 = 当时城的占领者不是城主(占领者为空的约 8.6% 场次含义不明,不算);解救 = invaderRelease。税收、占领、掠夺的资源见上面的「PvP 资源」</div>
+     <div class="kpis">${kpiCard({label:'进攻场次', val:fi(T.battles), lines:[`攻方胜 ${fp(T.wins / T.battles, 0)}`]})}${kpiCard({label:'打 NPC 城', val:fp(T.npc / T.battles, 1), lines:[`${fi(T.npc)} 场`]})}${kpiCard({label:'打已被占的城', val:fp(T.on_occ / T.battles, 0), lines:[`${fi(T.on_occ)} 场`]})}${kpiCard({label:'解救', val:fi(T.release), lines:['次数']})}</div>
+     <div class="chart"><canvas id="c-oinv"></canvas></div></div>`);
+    const dl = X.daily; mkChart('c-oinv', {type:'bar', data:{labels:dl.map(r => md(r.d)), datasets:[{label:'进攻场次', data:dl.map(r => r.battles), backgroundColor:css('--accent'), borderRadius:2, yAxisID:'y'},
+      {type:'line', label:'打已被占的城占比', data:dl.map(r => r.battles ? r.on_occ / r.battles : null), borderColor:css('--gold'), borderWidth:2, pointRadius:0, yAxisID:'y1'},
+      {type:'line', label:'解救次数', data:dl.map(r => r.release), borderColor:css('--slate'), borderWidth:1.5, pointRadius:0, yAxisID:'y'}]},
+      options:{scales:{x:{}, y:{beginAtZero:true}, y1:{beginAtZero:true, max:1, position:'right', grid:{display:false}, ticks:{callback:(v) => Math.round(v*100) + '%'}}}}}); }
+  if (tab === 'money' && D.old_ledger) { const L = D.old_ledger;
+    sec.insertAdjacentHTML('beforeend', `<h2>金币 / 水晶账本 · 近 28 天${NOTE}</h2><div class="sub">${md(L.from)} ~ ${md(L.to)}。应发 = 记录里的发放量;实际进账 = 真正加到玩家身上的量,两者的差按字段名推断是仓库满了溢出(待研发确认);进账含 NPC、离线产出等非玩家号。花费只统计 10 个在运营的老服</div>
+     <div class="grid">${L.res.map((R, i) => `<div class="card"><h3>${esc(R.name)}</h3>
+      <div class="tw"><table><tbody><tr><td class="l">应发</td><td>${big(R.issued)}</td></tr><tr><td class="l">实际进账</td><td>${big(R.actual)}<span class="note"> 占应发 ${fp(R.actual / R.issued, 0)}</span></td></tr><tr><td class="l">花费</td><td>${big(R.spent)}</td></tr><tr><td class="l">进账 − 花费</td><td>${big(R.actual - R.spent)}</td></tr></tbody></table></div>
+      <div class="chart"><canvas id="c-oled${i}"></canvas></div>
+      <details><summary class="link">进账来源(应发最多的 8 个)</summary><div class="tw"><table><thead><tr><th>来源</th><th>应发</th><th>实际进账</th><th>进账率</th></tr></thead><tbody>${R.sources.map(x => `<tr><td class="l">${esc(x.src)}</td><td>${big(x.issued)}</td><td>${big(x.actual)}</td><td>${fp(x.issued ? x.actual / x.issued : null, 0)}</td></tr>`).join('')}</tbody></table></div></details>
+      <details><summary class="link">花费去向(最多的 8 个)</summary><div class="tw"><table><thead><tr><th>去向</th><th>花费</th></tr></thead><tbody>${R.spend_top.map(x => `<tr><td class="l">${esc(x.src)}</td><td>${big(x.spent)}</td></tr>`).join('')}</tbody></table></div></details></div>`).join('')}</div>`);
+    L.res.forEach((R, i) => mkChart('c-oled' + i, {type:'bar', data:{labels:R.daily.map(r => md(r.d)), datasets:[{label:'实际进账', data:R.daily.map(r => r.actual), backgroundColor:css('--accent'), borderRadius:2}, {label:'花费', data:R.daily.map(r => r.spent), backgroundColor:css('--gold'), borderRadius:2}]},
+      options:{scales:{x:{}, y:{beginAtZero:true, ticks:{callback:(v) => big(v)}}}}})); }
+  if (tab === 'newuser' && D.old_newdev) { const ND = D.old_newdev;
+    sec.insertAdjacentHTML('beforeend', `<h2>新号按设备拆:全新设备 vs 老玩家小号${NOTE}</h2><div class="card"><h3>近 150 天注册、注册后 7 天内在老服登录过的新号(${fi(ND.n)} 个,已去掉 601 账号和疑似刷量号)</h3><div class="sub">同一个广告 ID 下有更早建的号 = 老玩家小号;有广告 ID 但设备上没有更早的号 = 全新设备;没取到广告 ID = 无法判断。广告 ID 2025-09-18 起才记录,更早的老号多数没有,所以小号比例是下限;iOS 绝大多数不给广告 ID,基本拆不开。D1 / D7 = 注册后第 N 天在老服登录;30 天付费只算满 30 天的号</div>
+     <div class="tw"><table><thead><tr><th>分组</th><th>平台</th><th>人数</th><th>D1</th><th>D7</th><th>30 天内付费</th></tr></thead><tbody>${ND.rows.map(x => `<tr><td class="l">${esc(x.name)}</td><td>${esc(x.plat)}</td><td>${fi(x.n)}</td><td>${pcx(x.d1.n, x.d1.base)}</td><td>${pcx(x.d7.n, x.d7.base)}</td><td>${pcx(x.pay30.n, x.pay30.base)}</td></tr>`).join('')}</tbody></table></div></div>`); }
 }
 draw(); window.scrollTo(0, 0);
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
