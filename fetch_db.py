@@ -37,7 +37,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 HOST = os.environ.get('INVADER_DB_HOST', '192.168.50.14')
 LOG_PORT, PROD_PORT = 39995, 39998
-LIGHT_FROM_SQL = ['Revenue_today', 'N601_players detail', 'N601_activity tasks day', 'N601_checkout']   # 轻量刷新时重跑的现有小卡
+LIGHT_FROM_SQL = ['Revenue_today', 'N601_players detail', 'N601_activity tasks day', 'N601_checkout', 'N601_order status']   # 轻量刷新时重跑的现有小卡;2026-11-05 加到账状态(几十行,几秒),今天的 601 订单要用它剔测试卡
 
 def creds():
     u, p = os.environ.get('INVADER_DB_USER'), os.environ.get('INVADER_DB_PASSWORD')

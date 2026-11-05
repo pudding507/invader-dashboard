@@ -1025,7 +1025,7 @@ function todayCard(scope){
   const t6 = T.n601_tbl;
   const pay = x => x ? `${fm(x.usd,2)}<span class="note"> ${x.payers} 人 · ${x.orders} 笔</span>` : '—';
   const n6Tbl = t6 ? `<div class="tw"><table><thead><tr><th>601</th><th>今天截至 ${esc(T.as_of.slice(11))}</th><th>昨天同一时刻(${esc(T.y_cut)})</th><th>昨天全天</th></tr></thead><tbody>
-    <tr><td class="l">充值<span class="note"> 今天的订单未核对到账</span></td><td>${pay(t6.pay[0])}</td><td>${pay(t6.pay[1])}</td><td>${pay(t6.pay[2])}</td></tr>
+    <tr><td class="l">充值<span class="note"> 已剔除测试卡、沙盒、退款;PayerMax 未核对</span></td><td>${pay(t6.pay[0])}</td><td>${pay(t6.pay[1])}</td><td>${pay(t6.pay[2])}</td></tr>
     ${t6.click ? (() => { const ck = x => x ? `${fi(x.users)} 人<span class="note"> ${x.clicks} 次 · 生成订单 ${x.order_users} 人</span>` : '—'; return `<tr><td class="l">点击付费<span class="note"> Google / Apple</span></td><td>${ck(t6.click[0])}</td><td>${ck(t6.click[1])}</td><td>${ck(t6.click[2])}</td></tr>`; })() : ''}
     <tr><td class="l">新建角色</td><td>${fiN(t6.reg[0])}</td><td>${fiN(t6.reg[1])}</td><td>${fiN(t6.reg[2])}</td></tr>
     <tr><td class="l">今天登录过<span class="note"> 角色表只留最后一次登录,没有昨天对照</span></td><td>${fiN(t6.login[0])}</td><td>—</td><td>—</td></tr>

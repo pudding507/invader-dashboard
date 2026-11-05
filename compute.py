@@ -460,6 +460,12 @@ def today_live(c):
         T['t'] = pd.to_datetime(T.created_at, format='mixed'); T = T[T.t.dt.strftime('%Y-%m-%d') == day]
     old = T[T.server_id != 601] if len(T) else T
     n6 = T[(T.server_id == 601) & ~T.monetId.isin(ex601)] if len(T) else T
+    # 2026-11-05(用户确认,R38):今天的 601 订单也按 New Era 支付表剔掉测试卡、沙盒和退款,不只靠测试号名单
+    st_ = {str(x['order_id']): ('test' if x['environment'] == 'sandbox' or x['store_test'] else 'refund' if x['money_state'] == 'REFUNDED' else 'ok')
+           for x in c.raw.get('N601_order status', [])}
+    if len(n6) and 'order_id' in n6:
+        bad_ = n6.order_id.astype(str).map(st_).isin(['test', 'refund'])
+        out['n601_test_dropped'] = int(bad_.sum()); n6 = n6[~bad_]
     out['old'] = part(old)
     out['old_y'] = part(c.O[(c.O.d == c.end) & (c.O.t <= y_cut)])
     out['old_y_full'] = part(c.O[c.O.d == c.end])
@@ -1581,19 +1587,27 @@ def n601(c, only=None):
                  'payers_old': int((O90 > 0).sum()), 'whales_old': int((O90 >= 1000).sum()), 'people': migrants,
                  'new_with_old_login': int(c.LS[c.LS.monetId.isin(set(P[P.grp == 'new'].monetId)) & (c.LS.d >= start)].monetId.nunique())}
     # 按设备分组(2026-10-21):新建号里,同一台设备(广告 ID)上有老账号的 = 老玩家小号;否则 = 全新设备;没有广告 ID = 无法判断
+    # 2026-11-05 加「广告安装」(用户确认):新 App 下个版本前不写广告 ID,11-04 开投后的新号会落进「无广告 ID」。
+    # 新账号(不是旧号直接进)里,没有广告 ID、但埋点 session_start 的安装来源是 Facebook / Instagram 的,单独成组。
+    # 只覆盖同意采集的玩家;下个版本上报广告 ID 后这批人仍按这里归组(之前的号不会补写)
+    AD_IDS = set()
+    EV0 = pd.DataFrame(m.get('N601_client events', []))
+    if len(EV0) and 'install_referrer' in EV0:
+        ad_inst = set(EV0[EV0.install_referrer.fillna('').astype(str).str.contains('facebook|instagram', case=False)].install_md5)
+        AD_IDS = set(EV0[EV0.install_md5.isin(ad_inst) & (EV0.user_id.fillna(0) > 0)].user_id.astype(int))
     DV = pd.DataFrame(m.get('N601_device ids', []))
     if len(DV):
         dev_accts = DV.groupby('device_hash').monetId.apply(set)
         acct_devs = DV.groupby('monetId').device_hash.apply(set)
         def dev_group(mm):
             if mm < N601_OLD_ID_MAX: return 'old'
-            if mm not in acct_devs.index: return 'noid'
+            if mm not in acct_devs.index: return 'ad' if mm in AD_IDS else 'noid'
             accts = set().union(*[dev_accts[h] for h in acct_devs[mm]])
             return 'olddev' if any(a_ < N601_OLD_ID_MAX for a_ in accts) else 'newdev'
         P['dev'] = P.monetId.map(dev_group)
         paid = Ok.groupby('monetId').price.sum()
         device_groups = []
-        for g_, label in (('old', '老服账号(旧号直接进)'), ('olddev', '老玩家小号(同设备有旧号)'), ('newdev', '全新设备'), ('noid', '无广告 ID,无法判断')):
+        for g_, label in (('old', '老服账号(旧号直接进)'), ('olddev', '老玩家小号(同设备有旧号)'), ('newdev', '全新设备'), ('ad', '广告安装(埋点来源,无广告 ID)'), ('noid', '无广告 ID,无法判断')):
             x = P[P.dev == g_]
             device_groups.append({'key': g_, 'name': label, 'n': int(len(x)), 'd1': ret(x, 1), 'd3': ret(x, 3),
                                   'recent': int((x.since_last <= 2).sum()), 'payers': int(x.monetId.isin(paid.index).sum()),
@@ -1610,9 +1624,9 @@ def n601(c, only=None):
             peers = set().union(*[dev_accts[h] for h in acct_devs[mm]]) & set(Pt.index)
             t0 = pd.to_datetime(Pt.loc[list(peers), 'created_at'], format='mixed')
             first_on_dev[mm] = t0.idxmin() == mm
-        P['src'] = P.dev.map({'old': 'direct', 'olddev': 'alt', 'noid': 'noid'})
+        P['src'] = P.dev.map({'old': 'direct', 'olddev': 'alt', 'noid': 'noid', 'ad': 'ad'})
         P.loc[P.dev == 'newdev', 'src'] = P.loc[P.dev == 'newdev', 'monetId'].map(lambda x: 'fresh' if first_on_dev[x] else 'repeat')
-        SRC = [('fresh', '真新设备'), ('repeat', '同设备重复新号'), ('alt', '老玩家小号(同设备有旧号)'), ('direct', '旧号直接进'), ('noid', '无广告 ID')]
+        SRC = [('fresh', '真新设备'), ('repeat', '同设备重复新号'), ('alt', '老玩家小号(同设备有旧号)'), ('direct', '旧号直接进'), ('ad', '广告安装(无广告 ID)'), ('noid', '无广告 ID')]
         def rc(x, n):
             v = ret(x, n); v['ci'] = wilson(v['n'], v['base']); v['verdict'] = ret_verdict(f'd{n}', v['ci']); return v
         summary = [{'key': k_, 'name': nm, 'n': int((P.src == k_).sum()), **{f'd{n}': rc(P[P.src == k_], n) for n in (1, 3, 7, 30)}} for k_, nm in SRC]
@@ -1714,7 +1728,8 @@ def n601(c, only=None):
         if acc_:
             v = float(life_pay.reindex(list(acc_)).fillna(0).sum())
             return ('whale' if v >= 1000 else 'payer') if v > 0 else 'free'
-        return 'noid' if P.loc[P.monetId == mm, 'dev'].iloc[0] == 'noid' else 'new'
+        dv_ = P.loc[P.monetId == mm, 'dev'].iloc[0]
+        return dv_ if dv_ in ('noid', 'ad') else 'new'
     P['origin'] = P.monetId.map(origin_of)
     P['linked_pay'] = P.monetId.map(lambda mm: float(life_pay.reindex(list(linked[mm])).fillna(0).sum()) if linked[mm] else 0.0)
     # 沉睡回流:进 601 前 30 天,关联老账号在老服一次都没登录过
@@ -1728,7 +1743,7 @@ def n601(c, only=None):
     paid601 = Ok.groupby('monetId').price.sum()
     origin_rows = []
     for g_, label in (('whale', '回流大 R(关联老账号历史付费 ≥ $1,000)'), ('payer', '回流付费用户(历史付费 < $1,000)'),
-                      ('free', '回流免费用户(关联老账号无付费)'), ('new', '新用户(设备上无旧账号)'), ('noid', '无法判断(无广告 ID)')):
+                      ('free', '回流免费用户(关联老账号无付费)'), ('new', '新用户(设备上无旧账号)'), ('ad', '广告安装(埋点来源,无广告 ID)'), ('noid', '无法判断(无广告 ID)')):
         x = P[P.origin == g_]
         origin_rows.append({'key': g_, 'name': label, 'n': int(len(x)), 'direct': int((x.grp == 'old').sum()), 'alt': int((x.grp == 'new').sum()),
                             'dormant': int(x.dormant.sum()), 'old_pay': r(x.linked_pay.sum(), 0), 'd1': ret(x, 1),
@@ -1763,7 +1778,7 @@ def n601(c, only=None):
         sig = [d0lv[m_] for m_ in x.monetId if m_ in d0lv]
         return {'n': int(len(x)), 'lv2': int((x.city >= 2).sum()), 'lv3': int((x.city >= 3).sum()), 'lv5': int((x.city >= 5).sum()),
                 'd0_signed': len(sig), 'd0_lv3': int(sum(v >= 3 for v in sig))}
-    SRCN = [('fresh', '真新设备'), ('repeat', '同设备重复新号'), ('alt', '老玩家小号'), ('direct', '旧号直接进'), ('noid', '无广告 ID')]
+    SRCN = [('fresh', '真新设备'), ('repeat', '同设备重复新号'), ('alt', '老玩家小号'), ('direct', '旧号直接进'), ('ad', '广告安装'), ('noid', '无广告 ID')]
     city_reach = ([{'key': k_, 'name': nm, **reach(P[P.src == k_])} for k_, nm in SRCN if 'src' in P and (P.src == k_).any()]
                   + [{'key': 'all', 'name': '全部', **reach(P)}])
     # 两个 App 合计周付费(总纲 6.2):以内测开始日为周起点,往前 8 周是基线(全是老服);601 部分 = 已到账 + PayerMax 待核实
@@ -1789,7 +1804,7 @@ def n601(c, only=None):
               for _, x in pay_users.sort_values('usd', ascending=False).iterrows()]
     S_ = pd.DataFrame(m.get('N601_activity signin', []))
     if len(S_): S_['t'] = pd.to_datetime(S_.signin_at, format='mixed')
-    ORIGIN_NAME = {'whale': '回流大 R', 'payer': '回流付费用户', 'free': '回流免费用户', 'new': '新用户', 'noid': '无法判断'}
+    ORIGIN_NAME = {'whale': '回流大 R', 'payer': '回流付费用户', 'free': '回流免费用户', 'new': '新用户', 'ad': '广告安装', 'noid': '无法判断'}
     Pi = P.set_index('monetId')
     for p_ in payers:
         mm = p_['id']; reg_ = Pi.reg.get(mm); first_ = pd.Timestamp(p_['first'])
@@ -1846,7 +1861,7 @@ def n601(c, only=None):
             return {'n': int(len(x)), 'days_median': r(float(days.median()), 1), 'days_mean': r(float(days.mean()), 2),
                     'days_ge3': int((days >= 3).sum()), **lv, 'ally7': ally, 'arena': int(x.monetId.isin(AR).sum()),
                     'pay7': fp_, 'payers': int(len(cnt)), 'repeat': int((cnt >= 2).sum())}
-        SRCN = [('fresh', '真新设备'), ('repeat', '同设备重复新号'), ('alt', '老玩家小号'), ('direct', '旧号直接进'), ('noid', '无广告 ID')]
+        SRCN = [('fresh', '真新设备'), ('repeat', '同设备重复新号'), ('alt', '老玩家小号'), ('direct', '旧号直接进'), ('ad', '广告安装'), ('noid', '无广告 ID')]
         first7 = {'upto': (E - pd.Timedelta(days=6)).strftime('%Y-%m-%d'),
                   'rows': [dict(key=k_, name=nm, **(f7(M7[M7.src == k_]) or {'n': 0})) for k_, nm in SRCN] + [dict(key='all', name='全部', **(f7(M7) or {'n': 0}))]}
     Ok['paid_usd'] = Ok.price.where(Ok.status == 'paid', 0.0)
