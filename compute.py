@@ -1460,6 +1460,7 @@ def load_exclusions(scope):
         return set(N601_TEST_IDS_FALLBACK), [], f'{type(e).__name__}: {e}'
 
 
+N601_NPC_ID_MIN = 1_000_000_000   # 2026-11-06 ID ≥ 10 亿是系统给玩家生成的 NPC 城(10 亿 + 玩家 ID),不是玩家
 N601_OLD_ID_MAX = 2110000
 # 建筑类型名:来自 601 库各建筑配置表(GoldMineType 等)的 Name。类型 6、9、10、11、12 配置表里没有名字,不展示
 N601_BUILDINGS = {5: '主城 Palace', 1: '金矿 Gold Mine', 2: '金库 Gold Storage', 3: '水晶矿 Crystal Mine', 4: '水晶库 Crystal Storage',
@@ -2076,6 +2077,8 @@ def n601(c, only=None):
                           'rev': split(Okc[['monetId', 'd', 'paid_usd', '渠道']], 'd', 'paid_usd', ['渠道', '平台', '国家'])}
         except Exception as e_:
             trend_dims = {'error': str(e_)[:200]}
+    if only is None:   # 2026-11-06 逐人旅程用:留下每个人的属性、订单、活跃痕迹、签到
+        c.n6j = {'P': P.copy(), 'Ok': Ok.copy(), 'Act': Act.copy(), 'S': S_.copy() if len(S_) else pd.DataFrame()}
     return {'start': N601_START, 'end': E.strftime('%Y-%m-%d'), 'win': win, 'kpi': kpi, 'daily': daily, 'postback': postback, 'pay_weeks': pay_weeks, 'trend_dims': trend_dims, 'retention': retention, 'cohorts': cohorts,
             'progress': progress, 'levels': levels, 'gameplay': gameplay, 'migration': migration, 'device_groups': device_groups, 'origin': origin_rows, 'whale_entry': whale_entry, 'climb': climb,
             'hero_marks': hero_marks, 'two_app': two_app, 'guide': guide, 'city_reach': city_reach, 'reg_versions': reg_versions, 'order_layers': order_layers,
@@ -2582,6 +2585,146 @@ def n601_segments(c):
     return pd.DataFrame(rows)
 
 
+N6J_SRC = {'fresh': '真新设备', 'repeat': '同设备重复新号', 'alt': '老玩家小号', 'direct': '旧号直接进', 'ad': '广告安装', 'noid': '无广告 ID'}
+N6J_ORIGIN = {'whale': '回流大 R', 'payer': '回流付费', 'free': '回流免费', 'new': '新用户', 'ad': '广告安装', 'noid': '无法判断'}
+N6J_STATUS = {'paid': '商店确认到账', 'payermax': '按下单计入', 'unconfirmed': '未确认', 'pending': '无状态记录'}
+N6J_END = {'background': '切到后台', 'role_change': '切换角色 / 账号', 'shutdown': '关闭游戏', 'recovered': '异常后恢复'}
+N6J_PROB = {'invader_startup_failed': '启动失败', 'invader_login_failed': '登录失败', 'invader_critical_request_failed': '关键请求失败',
+            'invader_client_exception_summary': '客户端异常', 'invader_battle_interrupted': '战斗中断', 'invader_building_upgrade_blocked': '建筑升级受阻'}
+
+
+def n601_journeys(c):
+    """601 逐人旅程(2026-11-06,用户确认:参考 CityPLX 逐人旅程;显示玩家 ID 不显示姓名;回流只标来源类别,不显示老账号历史付费;时间线按天合并)。
+    每个内测角色一行 + 按天的时间线。服务端:注册、签到(主城等级)、活跃痕迹、订单;11-04 起的新表:战斗、建筑升级、钻石去向、活动积分、限时票。
+    埋点(只覆盖同意采集的玩家,B72 起较全):安装来源、会话时长与结束方式、启动 / 登录失败等问题。时间都是中国时间。"""
+    J = getattr(c, 'n6j', None)
+    if not J:
+        return None
+    m = c.raw; E = c.end; ex, _, _ = load_exclusions('n601')
+    P, Ok, Act, S = J['P'], J['Ok'], J['Act'], J['S']
+    ids = set(P.monetId)
+    G = n601_segments(c).set_index('monetId') if len(P) else pd.DataFrame()
+    TL = {}   # monetId -> {day: [[time, kind, text], ...]}
+    def add(mm, t, kind, text):
+        d = t.strftime('%Y-%m-%d'); TL.setdefault(mm, {}).setdefault(d, []).append([t.strftime('%H:%M') if (t.hour or t.minute) else '', kind, text])
+    for x in P.itertuples():
+        t0 = pd.to_datetime(x.created_at, format='mixed')
+        add(x.monetId, t0, '注册', f'建角色 · {N6J_SRC.get(getattr(x, "src", None), "—")} · 版本 {x.client_version or "—"}')
+    if len(S):
+        S2 = S[S.monetId.isin(ids)].copy(); S2['d'] = S2.t.dt.normalize()
+        for (mm, d), g in S2.groupby(['monetId', 'd']):
+            add(mm, g.t.min(), '签到', f'签到 · 主城 Lv{int(g.government_level.max())}')
+    for x in Ok[Ok.monetId.isin(ids)].itertuples():
+        add(x.monetId, x.t, '付费', f'{x.product_id} · ${x.price:,.2f} · {x.pay_ch} · {N6J_STATUS.get(x.status, x.status)}')
+    # 11-04 起的服务端新表
+    B = pd.DataFrame(m.get('N601_battles', []))
+    bat_n = {}
+    if len(B):
+        B = B[B.monetId.isin(ids)].copy(); B['t'] = _ms_cn(B.started_ms); B['d'] = B.t.dt.normalize()
+        def cat(r):
+            if r.mode_id in (2, 17) and r.target_type in ('player', 'player_occupied'): return '侵略玩家城'
+            if r.target_type == 'npc' and r.mode_id in (2, 11): return '侵略 NPC 城'
+            if r.mode_id == 5: return '反抗'
+            if r.mode_id == 13: return '英雄竞技场'
+            if r.target_type == 'stage': return '关卡 / 副本'
+            return '其他'
+        B['cat'] = [cat(r) for r in B.itertuples()]
+        bat_n = B.groupby('monetId').size().to_dict()
+        for (mm, d), g in B.groupby(['monetId', 'd']):
+            parts = [f'{k} {len(h)}' + (f'(胜 {int(h.won.fillna(0).sum())})' if h.ended_ms.notna().any() else '') for k, h in g.groupby('cat')]
+            add(mm, g.t.min(), '战斗', f'战斗 {len(g)} 场:' + '、'.join(parts))
+    BO = pd.DataFrame(m.get('N601_building ops', []))
+    if len(BO):
+        BO = BO[BO.monetId.isin(ids)].copy(); BO['t'] = _ms_cn(BO.started_ms); BO['d'] = BO.t.dt.normalize()
+        for (mm, d), g in BO.groupby(['monetId', 'd']):
+            city = g[g.building_type == 5]
+            nm = g.building_type.map(lambda k: N6_BTYPE.get(int(k), str(k))).value_counts()
+            add(mm, g.t.min(), '建筑', f'建筑升级 {len(g)} 次:' + '、'.join(f'{k} {v}' for k, v in nm.items())
+                + (f';主城 {int(city.from_level.min())} → {int(city.from_level.max()) + 1}' if len(city) else ''))
+    W = pd.DataFrame(m.get('N601_wallet spend', []))
+    dia_n = {}
+    if len(W):
+        W = W[W.monetId.isin(ids)].copy(); W['t'] = _ms_cn(W.occurred_ms); W['d'] = W.t.dt.normalize()
+        def dia(f_):
+            try: return sum(float(x.get('actualDiamond', 0) or 0) for x in json.loads(f_ or '[]'))
+            except Exception: return 0.0
+        W['dia'] = W.fees.map(dia); W['nm'] = W.consumer.map(lambda k: N6_SPEND_NAME.get(k, k))
+        dia_n = W.groupby('monetId').dia.sum().to_dict()
+        for (mm, d), g in W.groupby(['monetId', 'd']):
+            if g.dia.sum() <= 0: continue
+            by = g.groupby('nm').dia.sum().sort_values(ascending=False)
+            add(mm, g.t.min(), '钻石', f'花 {g.dia.sum():,.0f} 钻:' + '、'.join(f'{k} {v:,.0f}' for k, v in by.items() if v > 0))
+    PR = pd.DataFrame(m.get('N601_activity periods', [])); CO = pd.DataFrame(m.get('N601_activity contrib', []))
+    if len(CO) and len(PR):
+        tmpl = PR.set_index('period_key').template
+        C2 = CO[(CO.kind == 'contrib') & CO.monetId.isin(ids)].copy()
+        C2['t'] = pd.to_datetime(C2['at'], format='mixed') + pd.Timedelta(hours=8); C2['d'] = C2.t.dt.normalize()
+        C2['nm'] = C2.period_key.map(tmpl).map(lambda t_: N6_ACT_NAME.get(t_, t_))
+        for (mm, d), g in C2.groupby(['monetId', 'd']):
+            add(mm, g.t.min(), '活动', '活动积分:' + '、'.join(f'{k} +{v:,.0f}' for k, v in g.groupby('nm').amount.sum().items()))
+    TK = pd.DataFrame(m.get('N601_tickets', []))
+    if len(TK):
+        TK = TK[TK.monetId.isin(ids) & (TK.kind == 'use')].copy()
+        TK['t'] = pd.to_datetime(TK['at'], format='mixed', errors='coerce') + pd.Timedelta(hours=8); miss = TK.t.isna(); TK.loc[miss, 't'] = _ms_cn(TK.loc[miss, 'at_ms']); TK['d'] = TK.t.dt.normalize()
+        for (mm, d), g in TK.groupby(['monetId', 'd']):
+            add(mm, g.t.min(), '活动', f'用限时票 {g.amount.sum():,.0f} 张')
+    # 埋点:按 event_uuid 去重,时间用 server_time + 8;登录前事件(user_id = 0)按安装归到这个安装登录过的角色
+    EV = pd.DataFrame(m.get('N601_client events', []))
+    inst_src, play_s, probs = {}, {}, {}
+    if len(EV):
+        hu = EV.event_uuid.notna() & (EV.event_uuid.astype(str) != '') if 'event_uuid' in EV else pd.Series(False, index=EV.index)
+        EV = pd.concat([EV[hu].drop_duplicates('event_uuid'), EV[~hu]], ignore_index=True)
+        EV['t'] = pd.to_datetime(EV.server_time, format='mixed') + pd.Timedelta(hours=8); EV['d'] = EV.t.dt.normalize()
+        bad = set(EV[EV.user_id.isin(ex)].install_md5)
+        EV = EV[~EV.install_md5.isin(bad) & (EV.d <= E)]
+        own = EV[EV.user_id.isin(ids)].groupby('install_md5').user_id.first()
+        EV['mm'] = EV.user_id.where(EV.user_id.isin(ids), EV.install_md5.map(own))
+        EV = EV[EV.mm.notna()].copy(); EV['mm'] = EV.mm.astype(int)
+        if 'install_referrer' in EV:
+            def ref_src(x):
+                x = str(x).lower()
+                if 'facebook' in x: return 'Facebook'
+                if 'instagram' in x: return 'Instagram'
+                if 'organic' in x or 'google-play' in x: return '自然量'
+                if 'not%20set' in x or 'not set' in x: return '未设置'
+                return '其他'
+            R_ = EV[EV.install_referrer.notna() & (EV.install_referrer.astype(str) != '')].sort_values('t').drop_duplicates('mm')
+            inst_src = dict(zip(R_.mm, R_.install_referrer.map(ref_src)))
+        SS = EV[EV.event_name == 'invader_session_summary']
+        play_s = SS.groupby('mm').active_seconds.sum().to_dict()
+        for (mm, d), g in SS.groupby(['mm', 'd']):
+            last = g.sort_values('t').iloc[-1]
+            add(mm, g.t.min(), '会话', f'会话 {len(g)} 次,共 {g.active_seconds.fillna(0).sum() / 60:,.0f} 分钟;最后一次:{N6J_END.get(last.end_reason, last.end_reason or "—")}'
+                + (f',停在{N6_SCREEN.get(last.screen_id, last.screen_id)}' if isinstance(last.screen_id, str) and last.screen_id else ''))
+        PB = EV[EV.event_name.isin(N6J_PROB)]
+        probs = PB.groupby('mm').size().to_dict()
+        for (mm, d), g in PB.groupby(['mm', 'd']):
+            add(mm, g.t.min(), '问题', '、'.join(f'{N6J_PROB[k]} ×{v}' for k, v in g.event_name.value_counts().items()))
+        TS = EV[EV.event_name == 'invader_tutorial_step_completed']
+        for (mm, d), g in TS.groupby(['mm', 'd']):
+            add(mm, g.t.min(), '引导', f'完成引导步骤 {len(g)} 个')
+    # 汇总行
+    act_days = Act.groupby('monetId').d.nunique().to_dict(); last_act = Act.groupby('monetId').d.max().to_dict()
+    act_set = set(zip(Act.monetId, Act.d))
+    usd = Ok.groupby('monetId').price.sum().to_dict()
+    rows = []
+    for x in P.itertuples():
+        mm = x.monetId
+        d1 = None if x.reg + pd.Timedelta(days=1) > E else (mm, x.reg + pd.Timedelta(days=1)) in act_set
+        city = int(x.city) if pd.notna(x.city) else None
+        stage = 'pay' if usd.get(mm, 0) > 0 else 'd1' if d1 else 'lv3' if (city or 0) >= 3 else 'lv2' if (city or 0) >= 2 else 'role'
+        g = G.loc[mm] if mm in G.index else None
+        tl = TL.get(mm, {})
+        rows.append({'id': int(mm), 'reg': pd.to_datetime(x.created_at, format='mixed').strftime('%Y-%m-%d %H:%M'),
+                     'src': N6J_SRC.get(getattr(x, 'src', None), '—'), 'origin': N6J_ORIGIN.get(getattr(x, 'origin', None), '—'),
+                     'inst': inst_src.get(mm), 'plat': g.plat if g is not None else '未知', 'ver': g.ver if g is not None else '未知', 'cc': g.country if g is not None else '未知',
+                     'stage': stage, 'city': city, 'd1': d1, 'act_days': int(act_days.get(mm, 0)), 'last': last_act[mm].strftime('%Y-%m-%d') if mm in last_act else None,
+                     'battles': int(bat_n.get(mm, 0)), 'dia': r(float(dia_n.get(mm, 0)), 0), 'usd': r(float(usd.get(mm, 0)), 2),
+                     'play_min': r(play_s[mm] / 60, 0) if mm in play_s else None, 'probs': int(probs.get(mm, 0)),
+                     'tl': [[d, sorted(v, key=lambda e: e[0])] for d, v in sorted(tl.items())]})
+    return {'rows': rows, 'new_from': '2026-11-04'}
+
+
 N6_SEG_MIN = 10   # 版本 / 国家:内测玩家 ≥ 10 人才单独给一个筛选项
 
 
@@ -3013,6 +3156,14 @@ def ai_lists(c, DATA):
 def build(raw):
     errors = {}
     c = Ctx(raw)
+    # 2026-11-06 去掉 601 系统 NPC 城(用户确认):ID = 10 亿 + 玩家 ID,玩家建号后几秒到几分钟自动生成,无名字、无客户端、只有一座主城 Lv3、
+    # 从不登录;战斗表里打它的都是对应的那个玩家(target_type = npc)。它们不是玩家,从 601 各卡的玩家行里整体去掉;战斗里的 defender_id 不动(那是真人打的仗)
+    c.n601_npc = 0
+    for k_, v_ in list(c.raw.items()):
+        if k_.startswith('N601') and isinstance(v_, list) and v_ and isinstance(v_[0], dict) and 'monetId' in v_[0]:
+            keep = [x for x in v_ if not (isinstance(x.get('monetId'), (int, float)) and x['monetId'] >= N601_NPC_ID_MIN)]
+            if k_ == 'N601_players detail': c.n601_npc = len(v_) - len(keep)
+            c.raw[k_] = keep
     DATA = {'meta': {'data_through': c.end.strftime('%Y-%m-%d'), 'run_at': c.run_at, 'source': raw.get('source'),
                      'fetch_errors': raw.get('errors', {}), 'bands': BAND_NAMES, 'windows': WINDOWS}}
     DATA['daily'] = safe(lambda: daily_series(c), errors, 'daily')
@@ -3037,12 +3188,14 @@ def build(raw):
     _db_acts = safe(lambda: n601_activity_events(c), errors, 'n601_activity_events') or []
     DATA['n601_events'] = [e for e in N601_EVENTS if not (_db_acts and e['kind'] == '活动')] + _db_acts
     DATA['n601_new'] = safe(lambda: n601_newtables(c), errors, 'n601_new')
+    DATA['n601_people'] = safe(lambda: n601_journeys(c), errors, 'n601_people')   # 2026-11-06 逐人旅程
     DATA['n601_ev'] = {str(w_): safe(lambda w_=w_: n601_client(c, DATA['n601'], w_), errors, f'n601_ev_{w_}') for w_ in N6_EV_WINDOWS}
     DATA['n601_seg'] = safe(lambda: n601_by_segment(c, errors), errors, 'n601_seg')
     if DATA['n601'] and DATA['n601'].get('exclusions_error'):
         errors['exclusions'] = '排除名单读取失败,已退回内置测试号:' + DATA['n601']['exclusions_error']
     DATA['meta']['segs'] = c.segs
     DATA['meta']['n601_excluded'] = getattr(c, 'n601_excluded', 0)
+    DATA['meta']['n601_npc'] = getattr(c, 'n601_npc', 0)
     fr_ = getattr(c, 'farm_regs', None)
     DATA['meta']['farm'] = {'models': getattr(c, 'farm_list', []), 'n': int(len(fr_)) if fr_ is not None else 0,
                             'n28': int((fr_.reg > c.end - pd.Timedelta(days=28)).sum()) if fr_ is not None else 0,

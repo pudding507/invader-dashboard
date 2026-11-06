@@ -179,6 +179,7 @@ td.l{text-align:left;white-space:normal}
       <button role="tab" data-tab="n6new" id="t-n6new">留存与活跃</button>
       <button role="tab" data-tab="n6grow" id="t-n6grow">成长与玩法</button>
       <button role="tab" data-tab="n6pay" id="t-n6pay">付费</button>
+      <button role="tab" data-tab="n6people" id="t-n6people">逐人旅程</button>
       <button role="tab" data-tab="n6dq" id="t-n6dq">技术与数据</button>
       <span class="sep" aria-hidden="true"></span>
       <button role="tab" data-tab="old" id="t-old">老服</button>
@@ -233,7 +234,7 @@ if (S.server !== 'all' && !(D.srv && D.srv[S.server])) S.server = 'all';
 if (S.server !== 'all' && (S.band.startsWith('c:') || S.band.startsWith('v:'))) S.band = 'all';
 if (!S.band.startsWith('c:') && !S.band.startsWith('v:')) S.band = 'all';   // 2026-10-21 去掉等级段筛选:之前存下的等级段选择一律回到全部
 // 2026-11-03:顶部只放 601 各页;老服 9 页收进「老服」,下面一排二级页签
-const OLD = ['home','newuser','life','game','pvp','ally','money','geo','alerts'], N6 = ['n601','n6tech','n6first','n6new','n6grow','n6pay','n6dq'];
+const OLD = ['home','newuser','life','game','pvp','ally','money','geo','alerts'], N6 = ['n601','n6tech','n6first','n6new','n6grow','n6pay','n6people','n6dq'];
 const h = location.hash.slice(1); if ([...OLD, ...N6, 'defs'].includes(h)) S.tab = h;
 let lastOld = OLD.includes(S.tab) ? S.tab : 'home';
 const charts = [];
@@ -651,7 +652,7 @@ function n601Page(part){
   const tw = TA ? TA.weeks.filter(w => w.from >= N.start) : [];
   const V = SEG && part !== 'n6dq' ? (SEG.ev || {})['0'] : (D.n601_ev || {})['0'];   // 2026-11-05 埋点块固定内测以来   // 数据质量页始终是全部玩家
   const sToday = SEG ? '' : todayCard('n601');   // 今天实时只有全部玩家
-  const sBanner = `<div class="banner">${segTxt ? `<b>${esc(segTxt)}</b>两个 App 合计、今天实时、埋点数据质量仍是全部玩家。<br>` : ''}601 是新版内测服,口径和其他页不同:<b>活跃</b>用每日任务、签到、付款、登录等痕迹代替(新版不写老版登录日志,会漏掉什么都没留下的人);<b>充值</b>:Google / Apple 订单按 New Era 支付表判断到账(商店确认扣款、奖励已发放;商店测试购买和退款已剔除),PayerMax 网页支付没有到账状态记录,按下单计入收入(渠道表和订单分层里单列)。只统计 ${esc(N.start)} 内测开始后注册的角色,已去掉测试号;时间都是中国时间。${V ? '「获客与进入」等页的客户端数据来自埋点,只有同意采集的玩家才上报,人数是下限。' : ''}</div>`;
+  const sBanner = `<div class="banner">${segTxt ? `<b>${esc(segTxt)}</b>两个 App 合计、今天实时、埋点数据质量仍是全部玩家。<br>` : ''}601 是新版内测服,口径和其他页不同:<b>活跃</b>用每日任务、签到、付款、登录等痕迹代替(新版不写老版登录日志,会漏掉什么都没留下的人);<b>充值</b>:Google / Apple 订单按 New Era 支付表判断到账(商店确认扣款、奖励已发放;商店测试购买和退款已剔除),PayerMax 网页支付没有到账状态记录,按下单计入收入(渠道表和订单分层里单列)。只统计 ${esc(N.start)} 内测开始后注册的角色,已去掉测试号和系统 NPC 城(${fi(D.meta.n601_npc)} 个,ID = 10 亿 + 玩家 ID,建号时系统自动生成);时间都是中国时间。${V ? '「获客与进入」等页的客户端数据来自埋点,只有同意采集的玩家才上报,人数是下限。' : ''}</div>`;
   const VS = V ? V.startup.total : null, VU = V ? V.sessions.user_day : null, VC = V ? V.coverage.filter(x => x.act).slice(-1)[0] : null;
   // 2026-11-04 601 按玩家旅程重排(用户确认):关键数字按页拆开
   const KC = {
@@ -1389,6 +1390,52 @@ function geoPage(){
   bindInfo(); bindLinks();
 }
 
+// 2026-11-06 逐人旅程(用户确认,参考 CityPLX):每个 601 内测角色一行,点开看按天合并的时间线。显示玩家 ID、不显示姓名;回流只标来源类别
+const PSTAGES = [['all', '全部'], ['role', '只建了角色'], ['lv2', '到主城 Lv2'], ['lv3', '到主城 Lv3'], ['d1', '第二天回来'], ['pay', '付过费']];
+const PKIND = {'注册':'var(--accent)', '付费':'var(--gold)', '问题':'var(--bad)', '战斗':'var(--slate)'};
+function peoplePage(){
+  const J = D.n601_people;
+  if (!J || !J.rows) { $('root').innerHTML = '<section id="sec-n6people"><div class="empty">逐人旅程数据未生成</div></section>'; return; }
+  S.pStage = S.pStage || 'all'; S.pSort = S.pSort || 'new'; S.pSrc = S.pSrc || 'all'; S.pOpen = S.pOpen || [];
+  const all = J.rows, cnt = {}; all.forEach(r => cnt[r.stage] = (cnt[r.stage] || 0) + 1);
+  const srcs = [...new Set(all.map(r => r.src))];
+  let R = all.filter(r => (S.pStage === 'all' || r.stage === S.pStage) && (S.pSrc === 'all' || r.src === S.pSrc));
+  const by = {new:(a, b) => b.reg.localeCompare(a.reg), city:(a, b) => (b.city || 0) - (a.city || 0) || b.reg.localeCompare(a.reg), days:(a, b) => b.act_days - a.act_days || b.reg.localeCompare(a.reg),
+              pay:(a, b) => b.usd - a.usd || b.reg.localeCompare(a.reg), probs:(a, b) => b.probs - a.probs || b.reg.localeCompare(a.reg)};
+  R = [...R].sort(by[S.pSort]);
+  const shown = S.pAll ? R : R.slice(0, 50);
+  const seg = (key, opts) => `<span class="seg">${opts.map(([v, t]) => `<button data-p="${key}" data-v="${esc(v)}" aria-pressed="${S[key] === v}">${esc(t)}</button>`).join('')}</span>`;
+  const ctl = `<div class="note" style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center">
+    <span>走到哪一步 ${seg('pStage', PSTAGES.map(([v, t]) => [v, t + (v === 'all' ? ` ${all.length}` : ` ${cnt[v] || 0}`)]))}</span>
+    <span>来源 ${seg('pSrc', [['all', '全部'], ...srcs.map(x => [x, x])])}</span>
+    <span>排序 ${seg('pSort', [['new', '最新注册'], ['city', '主城最高'], ['days', '活跃天数最多'], ['pay', '付费最多'], ['probs', '问题最多']])}</span></div>`;
+  const stageName = Object.fromEntries(PSTAGES);
+  const dash = '<span class="note">—</span>';
+  const tl = r => r.tl.length ? r.tl.map(([d, ev]) => `<div style="margin:4px 0"><b>${md(d)}</b>${ev.map(([t, k, x]) => `<div style="padding-left:14px"><span class="note" style="display:inline-block;min-width:40px">${esc(t)}</span><span style="display:inline-block;min-width:34px;color:${PKIND[k] || 'var(--muted)'}">${esc(k)}</span> ${esc(x)}</div>`).join('')}</div>`).join('') : '<span class="note">没有记录</span>';
+  const body = shown.map(r => `<tr class="prow" data-id="${r.id}" style="cursor:pointer"><td>${r.id}</td><td>${esc(r.reg.slice(5))}</td><td class="l">${esc(r.src)}</td><td class="l">${esc(r.origin)}</td><td>${r.inst ? esc(r.inst) : dash}</td><td>${esc(r.plat)}</td><td>${esc(String(r.cc).toUpperCase())}</td><td>${esc(r.ver)}</td>
+    <td class="l">${esc(stageName[r.stage])}</td><td>${r.city ?? '—'}</td><td>${r.d1 == null ? dash : r.d1 ? '是' : '否'}</td><td>${r.act_days}</td><td>${r.last ? md(r.last) : '—'}</td><td>${r.battles ? fi(r.battles) : dash}</td><td>${r.dia ? fi(r.dia) : dash}</td><td>${r.usd ? fm(r.usd, 2) : dash}</td><td>${r.play_min != null ? fi(r.play_min) + ' 分' : dash}</td><td>${r.probs ? fi(r.probs) : dash}</td></tr>
+    <tr class="pdet" data-id="${r.id}" ${S.pOpen.includes(r.id) ? '' : 'hidden'}><td colspan="18" class="l" style="text-align:left">${S.pOpen.includes(r.id) ? tl(r) : ''}</td></tr>`).join('');
+  const heads = ['玩家 ID', '注册', '来源', '回流类别', '安装来源', '平台', '国家', '版本', '走到哪一步', '现在主城', '次日回来', '活跃天数', '最后活跃', '战斗', '花钻', '付费', '游戏时长', '问题'];
+  const table = R.length ? `<div class="tw"><table><thead><tr>${heads.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`
+    + (R.length > 50 ? `<button class="link" data-p="pAll">${S.pAll ? '只看前 50 人' : `显示全部 ${fi(R.length)} 人`}</button>` : '')
+    : '<div class="empty">当前筛选条件下没有玩家</div>';
+  $('root').innerHTML = `<section id="sec-n6people"><div class="sub" style="margin:2px 0 12px">601 内测以来每个角色一行(已去掉测试号和 ${fi(D.meta.n601_npc)} 个系统 NPC 城),共 ${fi(R.length)} 人。点开一行看这个人从注册开始每天做了什么。</div>
+   <div class="card"><h3>玩家列表</h3>${ctl}${table}
+   <div class="note">时间是中国时间,时间线按天合并。走到哪一步取最远的一步:只建了角色 → 到主城 Lv2 → 到主城 Lv3 → 第二天回来 → 付过费;主城是当前等级。次日回来按活跃痕迹(每日任务、签到、付款、登录等),「—」= 还没满 1 天。
+   来源按设备判断(真新设备 / 同设备重复新号 / 老玩家小号 / 旧号直接进 / 广告安装 / 无广告 ID);回流类别只标类别,不显示老账号历史付费。付费含 PayerMax(按下单计入)。
+   战斗、建筑升级、花钻、活动积分、限时票来自 ${esc(J.new_from)} 起的服务端新表,之前的日子没有这些记录;安装来源、游戏时长、问题、引导步骤来自埋点,只有同意采集的玩家才有,B72 起较全,其他人显示「—」。问题 = 启动失败、登录失败、关键请求失败、客户端异常、战斗中断、建筑升级受阻的次数。</div></div></section>`;
+  const sec = $('sec-n6people');
+  sec.onclick = (e) => {
+    const b = e.target.closest('[data-p]');
+    if (b) { const k = b.dataset.p; if (k === 'pAll') S.pAll = !S.pAll; else { S[k] = b.dataset.v; S.pAll = false; } peoplePage(); return; }
+    const tr = e.target.closest('tr.prow'); if (!tr) return;
+    const id = +tr.dataset.id, i = S.pOpen.indexOf(id);
+    if (i >= 0) S.pOpen.splice(i, 1); else S.pOpen.push(id);
+    const det = sec.querySelector(`tr.pdet[data-id="${id}"]`), r = all.find(x => x.id === id);
+    det.hidden = i >= 0; det.firstElementChild.innerHTML = i >= 0 ? '' : tl(r);
+  };
+}
+
 function draw(){
   charts.splice(0).forEach(c => c.destroy());
   segs();
@@ -1396,13 +1443,13 @@ function draw(){
   const today = new Date(); const lag = Math.floor((Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) - Date.parse(END + 'T00:00:00Z')) / 864e5);
   const stale = lag > 2 ? `<div class="banner" style="margin-top:12px">数据已过期:截至 ${END},已经 ${lag} 天没有更新。页面上的数字和告警都停在那一天,请先刷新数据再做判断。</div>` : '';
   $('f-bar').classList.toggle('hidden', !OLD.includes(S.tab));   // 筛选只用于老服各页
-  $('f-bar6').classList.toggle('hidden', !N6.includes(S.tab) || S.tab === 'n6dq');   // 2026-11-05 技术与数据页不随筛选,不显示筛选条
+  $('f-bar6').classList.toggle('hidden', !N6.includes(S.tab) || S.tab === 'n6dq' || S.tab === 'n6people');   // 2026-11-06 逐人旅程用表内筛选   // 2026-11-05 技术与数据页不随筛选,不显示筛选条
   const W6 = D.n601 && D.n601.win ? D.n601.win[S.w6] : null;
   const SC6 = (D.n601_seg || {}).counts || {};
   $('f-w6note').textContent = W6 ? `${W6.from.slice(5)} ~ ${END.slice(5)}${S.w6 === 1 ? '(数据截至日全天)' : '(内测以来)'};时间筛选只影响关键数字卡;趋势图、埋点块、标「不随时间筛选」的卡片都是全部内测期间或当前状态。平台 / 国家 / 版本一次选一项;国家按账号注册 IP 判断(挂 VPN 会判错),版本是最后一次登录的版本,不足 10 人的不单列;无法判断:平台 ${(SC6.plat||{})['未知'] ?? 0} 人、国家 ${(SC6.country||{})['未知'] ?? 0} 人、版本 ${(SC6.ver||{})['未知'] ?? 0} 人` : '';
   if (N6.includes(S.tab)) $('stamp').textContent = `601 数据截至 ${END} · 中国时间 · 更新于 ${(D.meta.run_at||'').replace('T',' ').slice(0,16)}`;
   ({home, newuser, life, game, pvp:pvpPage, ally:allyPage, money, geo:geoPage, alerts, defs,
-    n601:() => n601Page('n601'), n6tech:() => n601Page('n6tech'), n6first:() => n601Page('n6first'), n6new:() => n601Page('n6new'), n6grow:() => n601Page('n6grow'), n6pay:() => n601Page('n6pay'), n6dq:() => n601Page('n6dq')})[S.tab]();
+    n601:() => n601Page('n601'), n6tech:() => n601Page('n6tech'), n6first:() => n601Page('n6first'), n6new:() => n601Page('n6new'), n6grow:() => n601Page('n6grow'), n6pay:() => n601Page('n6pay'), n6dq:() => n601Page('n6dq'), n6people:peoplePage})[S.tab]();
   oldExtra(S.tab);
   if (stale) $('root').insertAdjacentHTML('afterbegin', stale);
 }
