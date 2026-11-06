@@ -2041,6 +2041,7 @@ def n601(c, only=None):
         a0 = start + pd.Timedelta(days=7 * k_); a1 = min(a0 + pd.Timedelta(days=6), E); wk_ = Ok[(Ok.d >= a0) & (Ok.d <= a1)]
         pay_weeks.append({'from': a0.strftime('%Y-%m-%d'), 'days': (a1 - a0).days + 1,
                           **{ch_: r(float(wk_[wk_.pay_ch == ch_].paid_usd.sum()), 2) for ch_ in ('Google', 'Apple')},
+                          'PayerMax': r(float(wk_[wk_.pay_ch == 'PayerMax(网页)'].paid_usd.sum()), 2),   # 2026-11-06 补:PayerMax 计入收入后这里漏了这一列
                           'pending': r(float(wk_.price.sum() - wk_.paid_usd.sum()), 2), 'payers': int(wk_.monetId.nunique())})
     # 付费回传 Meta(2026-11-05,缺失清单 P0-1):按天 × 回传状态;只是回传记录,不代表 Meta 后台的归因结果
     PB = pd.DataFrame(m.get('N601_meta postback', []))
