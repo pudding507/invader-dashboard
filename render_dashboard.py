@@ -651,7 +651,7 @@ function n601Page(part){
   const tw = TA ? TA.weeks.filter(w => w.from >= N.start) : [];
   const V = SEG && part !== 'n6dq' ? (SEG.ev || {})['0'] : (D.n601_ev || {})['0'];   // 2026-11-05 埋点块固定内测以来   // 数据质量页始终是全部玩家
   const sToday = SEG ? '' : todayCard('n601');   // 今天实时只有全部玩家
-  const sBanner = `<div class="banner">${segTxt ? `<b>${esc(segTxt)}</b>两个 App 合计、今天实时、埋点数据质量仍是全部玩家。<br>` : ''}601 是新版内测服,口径和其他页不同:<b>活跃</b>用每日任务、签到、付款、登录等痕迹代替(新版不写老版登录日志,会漏掉什么都没留下的人);<b>充值</b>:Google / Apple 订单按 New Era 支付表判断到账(商店确认扣款、奖励已发放;商店测试购买和退款已剔除),PayerMax 网页支付还没有状态记录,仍是「待核实」;确认到账和待核实分开显示,待核实不计入确认收入。只统计 ${esc(N.start)} 内测开始后注册的角色,已去掉测试号;时间都是中国时间。${V ? '「获客与进入」等页的客户端数据来自埋点,只有同意采集的玩家才上报,人数是下限。' : ''}</div>`;
+  const sBanner = `<div class="banner">${segTxt ? `<b>${esc(segTxt)}</b>两个 App 合计、今天实时、埋点数据质量仍是全部玩家。<br>` : ''}601 是新版内测服,口径和其他页不同:<b>活跃</b>用每日任务、签到、付款、登录等痕迹代替(新版不写老版登录日志,会漏掉什么都没留下的人);<b>充值</b>:Google / Apple 订单按 New Era 支付表判断到账(商店确认扣款、奖励已发放;商店测试购买和退款已剔除),PayerMax 网页支付没有到账状态记录,按下单计入收入(渠道表和订单分层里单列)。只统计 ${esc(N.start)} 内测开始后注册的角色,已去掉测试号;时间都是中国时间。${V ? '「获客与进入」等页的客户端数据来自埋点,只有同意采集的玩家才上报,人数是下限。' : ''}</div>`;
   const VS = V ? V.startup.total : null, VU = V ? V.sessions.user_day : null, VC = V ? V.coverage.filter(x => x.act).slice(-1)[0] : null;
   // 2026-11-04 601 按玩家旅程重排(用户确认):关键数字按页拆开
   const KC = {
@@ -659,8 +659,8 @@ function n601Page(part){
     act: kpiCard({label:`活跃 · ${WL}`, val:fi(WN.act), lines:[`按人去重;其中老服账号 ${fi(WN.act_old)} · 单日峰值 ${fi(k.act_peak)}`, trendL(r => r.act_old + r.act_new).replace(/近 7 天 [^·]+ · 前 7 天 [^<(]+(\([^)]*\))?/, '每天活跃')]}),
     d1: kpiCard({label:'D1 留存(全部内测期间)', val:fp(R.all.d1.rate,0), lines:[`${R.all.d1.n}/${R.all.d1.base} 人`, `D7 ${fp(R.all.d7.rate,0)}(${R.all.d7.n}/${R.all.d7.base})`]}),
     newdev: kpiCard({label:'新用户(全新设备)', val:fi((N.origin||[]).find(o => o.key==='new')?.n), lines:[`其余为回流用户或无法判断`, `见「用户来源」`]}),
-    pay: kpiCard({label:`确认到账 · ${WL}`, val:fm(WN.paid_usd,2), lines:[`另有待核实 ${fm(WN.pending_usd,2)}(PayerMax 等没有到账状态,不计入)`, trendL(r => r.paid_usd, true), `${fi(WN.payers)} 人 · ${fi(WN.orders)} 笔`, (WN.by_channel||[]).map(c => `${esc(c.ch)} ${fm(c.usd)}`).join(' · ') || '无订单']}),
-    payrate: kpiCard({label:`付费人数占活跃 · ${WL}`, val:fp(WN.act ? WN.payers / WN.act : null), lines:[`${fi(WN.payers)}/${fi(WN.act)} 人`, '含 PayerMax 待核实']}),
+    pay: kpiCard({label:`收入 · ${WL}`, val:fm(WN.paid_usd,2), lines:[`其中 PayerMax ${fm((WN.by_channel||[]).filter(c => c.ch.startsWith('PayerMax')).reduce((a, c) => a + (c.paid_usd || 0), 0), 2)}(网页支付,按下单计入)`, trendL(r => r.paid_usd, true), `${fi(WN.payers)} 人 · ${fi(WN.orders)} 笔`, (WN.by_channel||[]).map(c => `${esc(c.ch)} ${fm(c.usd)}`).join(' · ') || '无订单']}),
+    payrate: kpiCard({label:`付费人数占活跃 · ${WL}`, val:fp(WN.act ? WN.payers / WN.act : null), lines:[`${fi(WN.payers)}/${fi(WN.act)} 人`]}),
     startup: V ? kpiCard({label:'启动到登录成功(按安装)', val:fp(VS.resources ? VS.ready / VS.resources : null, 0), lines:[`${fi(VS.ready)}/${fi(VS.resources)} 个安装`, `启动失败后没登录上 ${fi(VS.failed_never_ready)} 个`]}) : '',
     playtime: V ? kpiCard({label:'每人每天游戏时长', val:VU.min_p50 != null ? VU.min_p50 + ' 分钟' : '—', lines:[`中位数;四分之一的人超过 ${VU.min_p75} 分钟`, `每人每天会话中位数 ${VU.sess_p50} 次`]}) : '',
     coverage: V && VC ? kpiCard({label:`埋点覆盖 · ${md(VC.d)}`, val:fp(VC.ev_users / VC.act, 0), lines:[`埋点里 ${VC.ev_users} 人 / 活跃 ${VC.act} 人`, '只有同意采集的玩家上报']}) : '',
@@ -669,21 +669,21 @@ function n601Page(part){
   };
   const kp = (...ks) => `<div class="kpis">${ks.map(x => KC[x] || '').join('')}</div>`;
   const intro = (t) => `<div class="sub" style="margin:2px 0 12px">${t}</div>`;
-  // 2026-11-05 总览核心数字(用户需求 5.1):新建角色、活跃、D1、确认到账、确认付费人数、待核实、Lv3 到达、两 App 合计
+  // 2026-11-05 总览核心数字(用户需求 5.1):新建角色、活跃、D1、收入、付费人数、Lv3 到达、两 App 合计(2026-11-06 PayerMax 计入收入,去掉待核实卡)
   const CRa = (N.city_reach || []).find(x => x.key === 'all');
   Object.assign(KC, {
     newrole: kpiCard({label:`新建角色 · ${WL}`, val:fi(WN.reg), lines:[`其中老服账号 ${fi(WN.reg_old)};现在已到主城 Lv3 ${fi(WN.reg_lv3)}`, trendL(r => r.reg_old + r.reg_new)]}),
-    paidpayers: kpiCard({label:`确认付费人数 · ${WL}`, val:fi(WN.paid_payers), lines:[`有已到账订单的人;只有待核实订单的另有 ${fi((WN.payers || 0) - (WN.paid_payers || 0))} 人`, trendL(r => r.paid_payers, false, ' 人次'), `占同期活跃 ${fp(WN.act ? WN.paid_payers / WN.act : null)}`]}),
+    paidpayers: kpiCard({label:`付费人数 · ${WL}`, val:fi(WN.paid_payers), lines:['有计入收入订单的人(含 PayerMax)', trendL(r => r.paid_payers, false, ' 人次'), `占同期活跃 ${fp(WN.act ? WN.paid_payers / WN.act : null)}`]}),
     pending: kpiCard({label:`待核实金额 · ${WL}`, val:fm(WN.pending_usd,2), lines:['PayerMax 等没有到账状态的订单', '不计入确认到账']}),
     lv3: CRa ? kpiCard({label:'主城 Lv3 到达(全部内测)', val:fp(CRa.n ? CRa.lv3 / CRa.n : null, 0), lines:[`${fi(CRa.lv3)}/${fi(CRa.n)} 人;Lv3 解锁入侵`, '按现在的等级,不随时间筛选']}) : ''});
-  const sKpi = kp('newrole', 'act', 'd1', 'pay', 'paidpayers', 'pending', 'lv3', 'twoapp');
+  const sKpi = kp('newrole', 'act', 'd1', 'pay', 'paidpayers', 'lv3', 'twoapp');
   const sScale = `<h2>每日新增与活跃</h2>
   <div class="grid">
    <div class="card"><h3>每日新增角色 · 按账号来源</h3><div class="sub">按旧号直接进 / 新账号拆(按广告安装拆见总览「逐日趋势」);老服账号 = 用旧账号直接进 601;新建号 = 新账号(含老玩家小号,见「用户来源」)</div><div class="chart"><canvas id="c-n6reg"></canvas></div></div>
    <div class="card"><h3>每日活跃 · 按账号来源</h3><div class="sub">当天有每日任务、签到、名人任务、加速道具、付款或登录痕迹的人</div><div class="chart"><canvas id="c-n6act"></canvas></div></div>
   </div>
-  <div class="card"><h3>每日明细 · 内测以来</h3><div class="sub">付费率 = 当天付费人数 ÷ 当天活跃;ARPPU = 当天金额 ÷ 当天付费人数;「金额」含 PayerMax 待核实,「确认到账」不含;付费人数「合计」按人去重;最新的日期在最上面</div>
-   <details><summary class="link">展开每日明细(${dl.length} 天;趋势见上面两张图和总览「逐日趋势」)</summary><div class="tw"><table><thead><tr><th>日期</th><th>新增</th><th>其中老服账号</th><th>活跃</th><th>付费人数</th><th>付费率</th><th>金额</th><th>确认到账</th><th>ARPPU</th></tr></thead><tbody>${dl.slice().reverse().map(r => { const a = r.act_old + r.act_new; return `<tr><td>${md(r.d)}</td><td>${r.reg_old + r.reg_new}</td><td>${r.reg_old}</td><td>${a}</td><td>${r.payers}</td><td>${r.payers ? fp(r.payers / a) : '—'}</td><td>${r.usd ? fm(r.usd,2) : '—'}</td><td>${r.paid_usd ? fm(r.paid_usd,2) : '—'}</td><td>${r.payers ? fm(r.usd / r.payers,2) : '—'}</td></tr>`; }).join('')}
+  <div class="card"><h3>每日明细 · 内测以来</h3><div class="sub">付费率 = 当天付费人数 ÷ 当天活跃;ARPPU = 当天金额 ÷ 当天付费人数;「金额」= 未剔除的全部订单,「收入」= 商店确认到账 + PayerMax;付费人数「合计」按人去重;最新的日期在最上面</div>
+   <details><summary class="link">展开每日明细(${dl.length} 天;趋势见上面两张图和总览「逐日趋势」)</summary><div class="tw"><table><thead><tr><th>日期</th><th>新增</th><th>其中老服账号</th><th>活跃</th><th>付费人数</th><th>付费率</th><th>金额</th><th>收入</th><th>ARPPU</th></tr></thead><tbody>${dl.slice().reverse().map(r => { const a = r.act_old + r.act_new; return `<tr><td>${md(r.d)}</td><td>${r.reg_old + r.reg_new}</td><td>${r.reg_old}</td><td>${a}</td><td>${r.payers}</td><td>${r.payers ? fp(r.payers / a) : '—'}</td><td>${r.usd ? fm(r.usd,2) : '—'}</td><td>${r.paid_usd ? fm(r.paid_usd,2) : '—'}</td><td>${r.payers ? fm(r.usd / r.payers,2) : '—'}</td></tr>`; }).join('')}
     <tr style="font-weight:600"><td>合计</td><td>${fi(WA.reg)}</td><td>${fi(WA.reg_old)}</td><td>${fi(WA.act)}<span class="note"> 去重</span></td><td>${fi(WA.payers)}</td><td>${WA.act ? fp(WA.payers / WA.act) : '—'}<span class="note"> 占期间活跃</span></td><td>${fm(WA.usd,2)}</td><td>${fm(WA.paid_usd,2)}</td><td>${WA.payers ? fm(WA.usd / WA.payers,2) : '—'}</td></tr></tbody></table></div></details>
    ${(N.suspects||[]).length ? `<div class="note">疑似批量账号 ${N.suspects.length} 个,<b>尚未剔除</b>,仍计入上面所有数字(待确认):${[...new Set(N.suspects.map(x => x.reason))].map(rs => `${N.suspects.filter(x => x.reason === rs).map(x => x.id).join('、')}(${esc(rs)})`).join(';')}</div>` : ''}</div>`;
   const sOrigin = `<h2>用户来源<span class="note" style="font-weight:400"> · 不随时间筛选</span></h2>
@@ -776,7 +776,7 @@ function n601Page(part){
   const sPay = `<h2>付费</h2>
   <div class="grid">
    <div class="card"><h3>渠道构成 · 内测以来</h3><div class="sub">已到账 = New Era 支付表里有商店收据、商店确认扣款(Apple 为生产环境收据)、奖励已发放</div>
-    <div class="tw"><table><thead><tr><th>渠道</th><th>金额</th><th>笔数</th><th>人数</th><th>已到账</th><th>状态</th></tr></thead><tbody>${(WA.by_channel || []).map(c => `<tr><td>${esc(c.ch)}</td><td>${fm(c.usd,2)}</td><td>${c.orders}</td><td>${c.payers}</td><td>${c.paid} 笔 · ${fm(c.paid_usd,2)}</td><td class="l">${c.paid === c.orders ? '全部已到账' : c.ch.startsWith('PayerMax') ? '待核实:PayerMax 状态表已建,还没有数据' : `${c.orders - c.paid} 笔没有到账确认`}</td></tr>`).join('')}</tbody></table></div>
+    <div class="tw"><table><thead><tr><th>渠道</th><th>金额</th><th>笔数</th><th>人数</th><th>计入收入</th><th>状态</th></tr></thead><tbody>${(WA.by_channel || []).map(c => `<tr><td>${esc(c.ch)}</td><td>${fm(c.usd,2)}</td><td>${c.orders}</td><td>${c.payers}</td><td>${c.paid} 笔 · ${fm(c.paid_usd,2)}</td><td class="l">${c.paid === c.orders ? '全部已到账' : c.ch.startsWith('PayerMax') ? '网页支付,按下单计入' : `${c.orders - c.paid} 笔没有到账确认`}</td></tr>`).join('')}</tbody></table></div>
     <h3 style="margin-top:8px">已剔除的订单<span class="note" style="font-weight:400"> · 不随时间筛选</span></h3><div class="tw"><table><thead><tr><th>原因</th><th>笔数</th><th>金额</th><th>账号数</th></tr></thead><tbody>${N.excluded.map(x => `<tr><td>${esc(x.why)}</td><td>${x.orders}</td><td>${fm(x.usd,2)}</td><td>${x.users}</td></tr>`).join('')}</tbody></table></div>
     <div class="note">已剔除账号:${N.test_ids.join('、')}(统一排除名单)。内测开始前注册的 ${N.excluded_players.before_start} 个角色不算内测玩家。</div></div>
    <div class="card"><h3>商品构成 · 内测以来</h3><div class="sub">按商品;钻石包里 PayerMax 网页价是商店价的 85%</div>
@@ -791,12 +791,12 @@ function n601Page(part){
     ${F.paid_no_click ? `<div class="note">另有 ${F.paid_no_click} 人有 Google / Apple 订单但没有点击记录,需核对</div>` : ''}
     <details><summary class="link">展开按天明细(趋势见上面「点击付费 → 下单 → 到账 · 按天」)</summary><div class="tw"><table><thead><tr><th>日期</th><th>活跃</th><th>点击付费人数</th><th>点击占活跃</th><th>点击次数</th><th>生成订单人数</th><th>到账人数</th></tr></thead><tbody>${CD.map(r => `<tr><td>${md(r.d)}</td><td>${fi(act[r.d] ?? 0)}</td><td>${fi(r.click_users)}</td><td>${act[r.d] ? cv(r.click_users, act[r.d]) : '—'}</td><td>${fi(r.clicks)}</td><td>${fi(r.order_users)}</td><td>${fi(r.paid_users)}</td></tr>`).join('')}</tbody></table></div>
     </details><div class="note">人数少,比率只作参考;一天内同一人多次点击按 1 人计</div></div>`; })() : ''}
-  <div class="card"><h3>付费玩家<span class="note" style="font-weight:400"> · 不随时间筛选</span></h3><div class="sub">按金额排序(含 PayerMax 待核实)。首充时主城 = 首次付费前最后一次签到记下的主城等级(没签到过就是「—」),是近似值</div>
+  <div class="card"><h3>付费玩家<span class="note" style="font-weight:400"> · 不随时间筛选</span></h3><div class="sub">按金额排序(含 PayerMax)。首充时主城 = 首次付费前最后一次签到记下的主城等级(没签到过就是「—」),是近似值</div>
    <div class="tw"><table><thead><tr><th>玩家 ID</th><th>姓名</th><th>来源</th><th>注册</th><th>注册到首充</th><th>首充时主城</th><th>金额</th><th>笔数</th><th>渠道</th><th>首次付费</th><th>最近付费</th><th>现在主城</th><th>活跃天数</th><th>最后登录</th></tr></thead><tbody>${N.payers.map(p => `<tr><td>${p.id}</td><td class="l"><span dir="auto">${esc(p.name ?? '—')}</span></td><td class="l">${esc(p.origin || G[p.grp] || '—')}</td><td>${md(p.reg)}</td><td>${p.days_to_first ?? '—'} 天</td><td>${p.city_at_first ?? '—'}</td><td>${fm(p.usd,2)}</td><td>${p.orders}</td><td class="l">${esc(p.channels)}</td><td>${esc((p.first||'').slice(5))}</td><td>${esc((p.last_pay||'').slice(5))}</td><td>${p.city ?? '—'}</td><td>${p.act_days ?? '—'}</td><td>${esc((p.last_login||'').slice(5))}</td></tr>`).join('')}</tbody></table></div></div>`;
   const sTA = `${TA ? `<h2>两个 App 合计收入<span class="note" style="font-weight:400"> · 不随时间筛选</span></h2>
-  <div class="card"><h3>每日付费:老服 + 601</h3><div class="sub">内测开始前 14 天起每天;基线线 = 周基线 ÷ 7(按天算的参照,单日波动大,看 7 天平均)。按周的表在下面。周的切法:每 7 天一周,从内测开始日 ${esc(N.start)} 往前往后切;基线 = 开测前 ${TA.base_weeks} 周老服的平均周付费 ${fm(TA.baseline)};首轮目标 = 基线 × 1.5(总纲 6.2)。601 拆成确认到账和待核实两段(待核实主要是 PayerMax,没有到账状态);「合计」和「比基线」含待核实;最后一周没过完,按实际天数</div>
+  <div class="card"><h3>每日付费:老服 + 601</h3><div class="sub">内测开始前 14 天起每天;基线线 = 周基线 ÷ 7(按天算的参照,单日波动大,看 7 天平均)。按周的表在下面。周的切法:每 7 天一周,从内测开始日 ${esc(N.start)} 往前往后切;基线 = 开测前 ${TA.base_weeks} 周老服的平均周付费 ${fm(TA.baseline)};首轮目标 = 基线 × 1.5(总纲 6.2)。601 拆成收入(商店确认到账 + PayerMax)和未确认两段;「合计」和「比基线」含未确认;最后一周没过完,按实际天数</div>
    <div class="chart"><canvas id="c-n6wk"></canvas></div>
-   <details><summary class="link">按周汇总</summary><div class="tw"><table><thead><tr><th>周</th><th>天数</th><th>老服</th><th>601 确认到账</th><th>601 待核实</th><th>合计</th><th>比基线</th></tr></thead><tbody>${TA.weeks.map(w => { const t = w.old + w.n601, b = TA.baseline * w.days / 7; return `<tr${w.from >= N.start ? ' style="font-weight:600"' : ''}><td>${md(w.from)} ~ ${md(w.to)}</td><td>${w.days}</td><td>${fm(w.old)}</td><td>${w.from >= N.start ? fm(w.n601_paid ?? w.n601) : '—'}</td><td>${w.from >= N.start ? fm(w.n601_other || 0) : '—'}</td><td>${fm(t)}</td><td>${sgn(dpct(t, b))}</td></tr>`; }).join('')}</tbody></table></div>
+   <details><summary class="link">按周汇总</summary><div class="tw"><table><thead><tr><th>周</th><th>天数</th><th>老服</th><th>601 收入</th><th>601 未确认</th><th>合计</th><th>比基线</th></tr></thead><tbody>${TA.weeks.map(w => { const t = w.old + w.n601, b = TA.baseline * w.days / 7; return `<tr${w.from >= N.start ? ' style="font-weight:600"' : ''}><td>${md(w.from)} ~ ${md(w.to)}</td><td>${w.days}</td><td>${fm(w.old)}</td><td>${w.from >= N.start ? fm(w.n601_paid ?? w.n601) : '—'}</td><td>${w.from >= N.start ? fm(w.n601_other || 0) : '—'}</td><td>${fm(t)}</td><td>${sgn(dpct(t, b))}</td></tr>`; }).join('')}</tbody></table></div>
    </details><div class="note">不足 7 天的周,「比基线」按天数折算。评分、卡顿、支付失败数库里没有,暂不能并列</div></div>` : ''}`;
   const EV = n6ev(V);
   // 版本 / 投放 / 活动日历(2026-11-04):读趋势时当切点;趋势图上同样标出
@@ -813,26 +813,26 @@ function n601Page(part){
    <div class="card"><h3>新建角色</h3><div class="sub">按注册日;广告安装 = 埋点来源是 Facebook / Instagram、没有广告 ID 的新号 ${dimSeg('c-trreg', ['合计', '来源', '平台', '国家'])}</div><div class="chart" style="height:180px"><canvas id="c-trreg"></canvas></div></div>
    <div class="card"><h3>活跃(活跃痕迹)</h3><div class="sub">当天有任务、签到、付款、登录等痕迹的人 ${dimSeg('c-tract', ['合计', '来源', '平台', '国家'])}</div><div class="chart" style="height:180px"><canvas id="c-tract"></canvas></div></div>
    <div class="card"><h3>D1 留存 · 按注册日</h3><div class="sub">只画已满 1 天的注册日;每天人数少,单日波动大,悬停看分子分母</div><div class="chart" style="height:180px"><canvas id="c-trd1"></canvas></div></div>
-   <div class="card"><h3>充值:确认到账 / 待核实</h3><div class="sub">美元;待核实 = PayerMax 等没有到账状态的订单,不计入确认收入;按维度拆时只看确认到账 ${dimSeg('c-trrev', ['合计', '渠道', '平台', '国家'])}</div><div class="chart" style="height:180px"><canvas id="c-trrev"></canvas></div></div>
-   <div class="card"><h3>付费人数</h3><div class="sub">有已到账订单的人 / 下过单的人(含待核实)</div><div class="chart" style="height:180px"><canvas id="c-trpay"></canvas></div></div>
+   <div class="card"><h3>充值:收入 / 未确认</h3><div class="sub">美元;收入 = 商店确认到账 + PayerMax(按下单计入);未确认 = 有订单、商店还没确认;按维度拆时只看收入 ${dimSeg('c-trrev', ['合计', '渠道', '平台', '国家'])}</div><div class="chart" style="height:180px"><canvas id="c-trrev"></canvas></div></div>
+   <div class="card"><h3>付费人数</h3><div class="sub">有计入收入订单的人 / 下过单的人</div><div class="chart" style="height:180px"><canvas id="c-trpay"></canvas></div></div>
    <div class="card"><h3>每人每天游戏时长</h3><div class="sub">中位数,分钟;埋点(只覆盖同意采集的人,10-29 起)</div><div class="chart" style="height:180px"><canvas id="c-trmin"></canvas></div></div>
    <div class="card"><h3>启动到登录成功率</h3><div class="sub">按安装;当天开始启动的安装里登录成功的比例(埋点)</div><div class="chart" style="height:180px"><canvas id="c-trst"></canvas></div></div>
   </div>`;
   const PBk = N.postback;
   const PBN = {'facebook-http-accepted':'服务端已发给 Meta(已接受)', 'meta-route-held':'交给客户端 Meta SDK 发送', 'skipped-no-attribution':'没有归因,未发'};
-  const sPost = PBk ? `<div class="card"><h3>付费回传 Meta · 状态</h3><div class="sub">${esc(N.start)} 以来 601 付费回传记录,按回传状态;10-29 起改由客户端 Meta SDK 发送,发送结果不回写库,要以 Meta 后台为准。同期确认到账订单 ${fi(PBk.paid_orders)} 笔(回传记录含测试单,两者不是一一对应)。PayerMax 网页支付没有回传记录</div>
+  const sPost = PBk ? `<div class="card"><h3>付费回传 Meta · 状态</h3><div class="sub">${esc(N.start)} 以来 601 付费回传记录,按回传状态;10-29 起改由客户端 Meta SDK 发送,发送结果不回写库,要以 Meta 后台为准。同期商店确认到账订单 ${fi(PBk.paid_orders)} 笔(回传记录含测试单,两者不是一一对应)。PayerMax 网页支付没有回传记录</div>
    <div class="tw"><table><thead><tr><th>回传状态</th><th>记录数</th></tr></thead><tbody>${Object.entries(PBk.total).map(([k, v]) => `<tr><td class="l">${esc(PBN[k] || k)}</td><td>${fi(v)}</td></tr>`).join('')}</tbody></table></div>
    <div class="chart" style="height:180px"><canvas id="c-n6pb"></canvas></div>
    <details><summary class="link">按天明细</summary><div class="tw"><table><thead><tr><th>日期</th>${Object.keys(PBN).map(k => `<th>${esc(PBN[k])}</th>`).join('')}</tr></thead><tbody>${PBk.daily.map(x => `<tr><td>${md(x.d)}</td>${Object.keys(PBN).map(k => `<td>${fi(x[k] || 0)}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details></div>` : '';
   const PW = N.pay_weeks, CKD = (N.checkout || {}).daily || [];
   const sPayTrend = `<h2>付费趋势<span class="note" style="font-weight:400"> · 从内测开始,不随时间筛选</span></h2><div class="grid">
-   <div class="card"><h3>每日充值 · 按渠道</h3><div class="sub">美元;Google / Apple 为确认到账,待核实主要是 PayerMax;很多天是 0,线 = 确认到账 7 天平均</div><div class="chart" style="height:200px"><canvas id="c-n6pw"></canvas></div></div>
+   <div class="card"><h3>每日充值 · 按渠道</h3><div class="sub">美元;Google / Apple 为商店确认到账,PayerMax 按下单计入;很多天是 0,线 = 收入 7 天平均</div><div class="chart" style="height:200px"><canvas id="c-n6pw"></canvas></div></div>
    <div class="card"><h3>每日订单 · 按状态</h3><div class="sub">笔数,和「订单状态分层」同口径、各层互斥;测试 = 测试号 + 测试卡 / 沙盒</div><div class="chart" style="height:200px"><canvas id="c-n6os"></canvas></div></div>
    ${CKD.length ? `<div class="card"><h3>点击付费 → 下单 → 到账 · 按天</h3><div class="sub">Google / Apple 内购;点击 = 在游戏里发起支付的人,下单 = 拿到订单号的人,到账 = 当天有已到账订单的人。PayerMax 网页支付不经过这一步</div><div class="chart" style="height:200px"><canvas id="c-n6ck"></canvas></div></div>` : ''}
   </div>`;
   const OL = N.order_layers;
-  const sLayers = OL ? `<div class="card"><h3>订单状态分层</h3><div class="sub">${esc(N.start)} 内测开始以来 601 的全部订单,按状态分层;<b>只有「确认到账」计入确认收入</b>,其余各层单列。「—」= 没有这类记录的数据源,不是 0</div>
-   <div class="tw"><table><thead><tr><th>状态</th><th>笔数</th><th>金额</th><th>人数</th><th>计入确认收入</th><th>说明</th></tr></thead><tbody>${OL.map(x => `<tr${x.counted ? ' style="font-weight:600"' : ''}><td class="l">${esc(x.name)}</td><td>${x.orders == null ? '—' : fi(x.orders)}</td><td>${x.usd == null ? '—' : fm(x.usd, 2)}</td><td>${x.users == null ? '—' : fi(x.users)}</td><td>${x.counted ? '是' : '否'}</td><td class="l note">${esc(x.note)}</td></tr>`).join('')}</tbody></table></div></div>` : '';
+  const sLayers = OL ? `<div class="card"><h3>订单状态分层</h3><div class="sub">${esc(N.start)} 内测开始以来 601 的全部订单,按状态分层;<b>「商店确认到账」和「PayerMax 网页支付」计入收入</b>,其余各层单列。「—」= 没有这类记录的数据源,不是 0</div>
+   <div class="tw"><table><thead><tr><th>状态</th><th>笔数</th><th>金额</th><th>人数</th><th>计入收入</th><th>说明</th></tr></thead><tbody>${OL.map(x => `<tr${x.counted ? ' style="font-weight:600"' : ''}><td class="l">${esc(x.name)}</td><td>${x.orders == null ? '—' : fi(x.orders)}</td><td>${x.usd == null ? '—' : fm(x.usd, 2)}</td><td>${x.users == null ? '—' : fi(x.users)}</td><td>${x.counted ? '是' : '否'}</td><td class="l note">${esc(x.note)}</td></tr>`).join('')}</tbody></table></div></div>` : '';
   const RV = N.reg_versions;
   const sRegVer = RV && RV.length ? `<h2>建号版本<span class="note" style="font-weight:400"> · 不随时间筛选</span></h2><div class="card"><h3>新账号按建号时的版本</h3><div class="sub">建号版本 = 账号第一次注册时的客户端版本,看「哪个版本带来的新人」用它;顶部筛选的版本是最后登录版本,两者不同。旧号直接进的账号建号版本是老 App 的,不在表里。D1 按活跃痕迹,只算满 1 天的人</div>
    <div class="tw"><table><thead><tr><th>建号版本</th><th>人数</th><th>注册日期</th><th>D1</th><th>现在到主城 Lv3</th></tr></thead><tbody>${RV.map(x => `<tr><td>${esc(x.v)}</td><td>${fi(x.n)}</td><td>${md(x.from)} ~ ${md(x.to)}</td><td>${x.d1 && x.d1.base ? `${fp(x.d1.rate,0)}<span class="note"> ${x.d1.n}/${x.d1.base}</span>` : '—'}</td><td>${pc6(x.lv3, x.n)}</td></tr>`).join('')}</tbody></table></div></div>` : '';
@@ -844,16 +844,15 @@ function n601Page(part){
              EV.first, H2('新手引导', '不随时间筛选') + `<div class="grid">${sGuideCard}${EV.steps}</div>`, sReach + (EV.lv3 || ''), EV.build || sBuildOps ? H2('建筑升级与受阻') + (EV.build || '') + sBuildOps : '', sFirst7 ? H2('新人前 7 天', '不随时间筛选') + sFirst7 + (EV.f7 || '') : ''],
     n6new: [sBanner, intro('进入以后留不留得住:每日新增与活跃、按来源的留存(活跃痕迹和埋点会话两种口径)、游戏时长与时段。'), kp('act', 'd1', 'playtime'), sScale, sRet, EV.dual, EV.sess],
     n6grow:[sBanner, intro('留下来的人玩到哪、玩什么:主城等级随时间、建筑与英雄、玩法参与、成就、战斗与入侵、活动、小游戏。'), EV.palace, sGrow, sBattle, sActs, EV.games],
-    n6pay: [sBanner, intro('付费规模与到账情况:确认到账和待核实分开;渠道与商品、点击到到账的链路、付费玩家、钻石存量。'), kp('pay', 'paidpayers', 'pending', 'payrate'), sPayTrend, sLayers, sPost, sPay, EV.shop, EV.dia, sWallet],
+    n6pay: [sBanner, intro('付费规模与到账情况:收入 = 商店确认到账 + PayerMax(按下单计入);渠道与商品、点击到到账的链路、付费玩家、钻石存量。'), kp('pay', 'paidpayers', 'payrate'), sPayTrend, sLayers, sPost, sPay, EV.shop, EV.dia, sWallet],
     n6dq:  [intro('客户端性能和数据本身的可靠性:加载与帧率、请求失败与异常、埋点覆盖与字段质量。本页始终是全部玩家,不随平台、国家、版本筛选。'), kp('coverage'), EV.techPerf, EV.dq]};
   // 2026-11-04 口径标签(用户需求 4.2「强制展示」):每张卡标数据来自哪类口径,按卡片标题前缀匹配
   const SRC_TAG = {
-    '服务端': ['每日新增角色', '回流用户与新用户切分', '老服大 R 进入 601', '新手引导', '主城 Lv2', '每天各主城等级', '等级成长速度', '主城等级分布', '各建筑 / 英雄等级', '玩法参与', '成就完成', '活动参与', '宠物竞猜与老虎机', '渠道构成', '已剔除的订单', '商品构成', '点击付费漏斗', '按天', '付费玩家', '玩家手里的钻石', '周付费', '每天的战斗', '各类战斗的结果', '建筑升级 · 服务端逐次', '每天花掉的钻石', '各去向合计', '新活动', '限时票', '每日付费:老服', '订单状态分层', '每日充值', '每日订单', '点击付费 → 下单', '新建角色', '充值:确认到账', '付费人数', '付费回传 Meta'],
+    '服务端': ['每日新增角色', '回流用户与新用户切分', '老服大 R 进入 601', '新手引导', '主城 Lv2', '每天各主城等级', '等级成长速度', '主城等级分布', '各建筑 / 英雄等级', '玩法参与', '成就完成', '活动参与', '宠物竞猜与老虎机', '渠道构成', '已剔除的订单', '商品构成', '点击付费漏斗', '按天', '付费玩家', '玩家手里的钻石', '周付费', '每天的战斗', '各类战斗的结果', '建筑升级 · 服务端逐次', '每天花掉的钻石', '各去向合计', '新活动', '限时票', '每日付费:老服', '订单状态分层', '每日充值', '每日订单', '点击付费 → 下单', '新建角色', '充值:收入', '付费人数', '付费回传 Meta'],
     '埋点下限': ['安装 → 登录', '每日启动漏斗', '启动各阶段耗时', '启动失败', '客户端版本', '注册当天游戏时长', '建筑升级怎么完成', '引导步骤 · 埋点', '建筑升级 · 按类型', '单次会话时长', '一天里什么时候在玩', '每人每天游戏时长', '商店 → 付费', '从哪里进商店', '每天打开商店', '页面加载耗时', '战斗帧率', '关键请求失败', '客户端异常', '每天埋点覆盖', '字段可用性', '各事件条数', '新安装按来源', '各来源合计', '注册后多久到主城 Lv3', '页面加载耗时 · 按天', '战斗低于 30 帧', '每人每天游戏时长', '启动到登录成功率', '会话结束时停在', '会话怎么结束', '启动与加载 · 按系统版本'],
     '代理': ['活跃(活跃痕迹)', 'D1 留存 · 按注册日', '每日活跃', '留存:老服账号 vs 新建号', '新人留存:按来源', '按注册日 × 来源', '新人前 7 天 · 按来源'],
-    '混合': ['新人前 7 天 · 逐日', '建角色 → 付费', '留存双轨', '每日明细', '老服账号近 3 日活跃', '老服账号每日活跃', '新账号按建号时的版本'],
-    '含待核实': ['每日明细', '付费玩家', '周付费', '渠道构成']};
-  const TAG_TIP = {'服务端':'服务端库表,全量', '埋点下限':'客户端埋点,只覆盖同意采集的玩家,人数是下限', '代理':'没有登录流水,用活跃痕迹近似,可能漏人', '混合':'不同来源的数字并列,各行口径见说明,不能直接相除', '含待核实':'金额含 PayerMax 等没有到账状态的订单'};
+    '混合': ['新人前 7 天 · 逐日', '建角色 → 付费', '留存双轨', '每日明细', '老服账号近 3 日活跃', '老服账号每日活跃', '新账号按建号时的版本']};
+  const TAG_TIP = {'服务端':'服务端库表,全量', '埋点下限':'客户端埋点,只覆盖同意采集的玩家,人数是下限', '代理':'没有登录流水,用活跃痕迹近似,可能漏人', '混合':'不同来源的数字并列,各行口径见说明,不能直接相除'};
   const tagsFor = (t) => Object.entries(SRC_TAG).filter(([k, arr]) => arr.some(x => t.startsWith(x))).map(([k]) => `<span class="srctag" title="${TAG_TIP[k]}">${k}</span>`).join('');
   const html6 = PARTS[part].join('\n').replace(/<h3>([^<]+)/g, (m, t) => m + tagsFor(t.trim()));
   $('root').innerHTML = `<section id="sec-${part}">${html6}</section>`;
@@ -866,11 +865,11 @@ function n601Page(part){
     const CH = (N.cohorts || []).filter(x => x.d1 && x.d1.base);
     mkChart('c-trd1', {evDates:CH.map(x => x.d), type:'line', data:{labels:CH.map(x => md(x.d)), datasets:[{label:'D1', data:CH.map(x => x.d1.rate), borderColor:css('--accent'), borderWidth:2, pointRadius:2}]},
       options:{plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c) => `D1 ${fp(c.raw, 0)}(${CH[c.dataIndex].d1.n}/${CH[c.dataIndex].d1.base})`}}}, scales:{x:{}, y:{beginAtZero:true, ticks:{callback:(v) => Math.round(v*100) + '%'}}}}});
-    mkChart('c-trrev', {evDates:tdd, type:'bar', data:{labels:tl, datasets:[{label:'确认到账', data:TD.map(r => r.paid_usd || 0), backgroundColor:css('--gold'), borderRadius:2, stack:'s'},
-      {label:'待核实', data:TD.map(r => Math.max(0, (r.usd || 0) - (r.paid_usd || 0))), backgroundColor:'rgba(201,150,40,0.35)', borderColor:css('--gold'), borderWidth:1, borderRadius:2, stack:'s'},
-      {type:'line', label:'确认到账 7 天平均', data:ma(TD.map(r => r.paid_usd || 0), 7), borderColor:css('--accent'), borderWidth:1.5, pointRadius:0, stack:'l'}]}, options:{scales:{x:{stacked:true}, y:{stacked:true, beginAtZero:true}}}});
+    mkChart('c-trrev', {evDates:tdd, type:'bar', data:{labels:tl, datasets:[{label:'收入', data:TD.map(r => r.paid_usd || 0), backgroundColor:css('--gold'), borderRadius:2, stack:'s'},
+      {label:'未确认', data:TD.map(r => Math.max(0, (r.usd || 0) - (r.paid_usd || 0))), backgroundColor:'rgba(201,150,40,0.35)', borderColor:css('--gold'), borderWidth:1, borderRadius:2, stack:'s'},
+      {type:'line', label:'收入 7 天平均', data:ma(TD.map(r => r.paid_usd || 0), 7), borderColor:css('--accent'), borderWidth:1.5, pointRadius:0, stack:'l'}]}, options:{scales:{x:{stacked:true}, y:{stacked:true, beginAtZero:true}}}});
     mkChart('c-trpay', {evDates:tdd, type:'bar', data:{labels:tl, datasets:[{label:'确认付费', data:TD.map(r => r.paid_payers || 0), backgroundColor:css('--gold'), borderRadius:2},
-      {label:'下过单(含待核实)', data:TD.map(r => r.payers), backgroundColor:'rgba(201,150,40,0.35)', borderColor:css('--gold'), borderWidth:1, borderRadius:2},
+      {label:'下过单', data:TD.map(r => r.payers), backgroundColor:'rgba(201,150,40,0.35)', borderColor:css('--gold'), borderWidth:1, borderRadius:2},
       {type:'line', label:'确认付费 7 天平均', data:ma(TD.map(r => r.paid_payers || 0), 7), borderColor:css('--accent'), borderWidth:1.5, pointRadius:0}]}, options:{scales:sm}});
     if (VT) { const SD = VT.sessions.daily.filter(r => r.users), SU = VT.startup.daily.filter(r => r.resources);
       mkChart('c-trmin', {evDates:SD.map(r => r.d), type:'line', data:{labels:SD.map(r => md(r.d)), datasets:[{label:'中位数(分钟)', data:SD.map(r => r.min_p50), borderColor:css('--accent'), borderWidth:2, pointRadius:2}]}, options:{plugins:{legend:{display:false}}, scales:{x:{}, y:{beginAtZero:true}}}});
@@ -879,9 +878,10 @@ function n601Page(part){
   { const TD = N.daily, tl = TD.map(r => md(r.d)), tdd = TD.map(r => r.d), stk = {x:{stacked:true}, y:{stacked:true, beginAtZero:true}};
     mkChart('c-n6pw', {evDates:tdd, data:{labels:tl, datasets:[{type:'bar', label:'Google 确认到账', data:TD.map(r => r.paid_google || 0), backgroundColor:css('--gold'), borderRadius:2, stack:'s'},
       {type:'bar', label:'Apple 确认到账', data:TD.map(r => r.paid_apple || 0), backgroundColor:css('--slate'), borderRadius:2, stack:'s'},
-      {type:'bar', label:'待核实', data:TD.map(r => Math.max(0, (r.usd || 0) - (r.paid_usd || 0))), backgroundColor:'rgba(201,150,40,0.35)', borderColor:css('--gold'), borderWidth:1, borderRadius:2, stack:'s'},
-      {type:'line', label:'确认到账 7 天平均', data:ma(TD.map(r => r.paid_usd || 0), 7), borderColor:css('--accent'), borderWidth:1.5, pointRadius:0, stack:'l'}]}, options:{scales:stk}});
-    mkChart('c-n6os', {evDates:tdd, type:'bar', data:{labels:tl, datasets:[['ord_paid', '确认到账', css('--gold')], ['ord_pending', '待核实 / 未确认', 'rgba(201,150,40,0.35)'], ['ord_test', '测试', css('--slate')], ['ord_refund', '退款', css('--bad')]]
+      {type:'bar', label:'PayerMax(按下单计入)', data:TD.map(r => r.paid_payermax || 0), backgroundColor:'rgba(201,150,40,0.55)', borderRadius:2, stack:'s'},
+      {type:'bar', label:'未确认', data:TD.map(r => Math.max(0, (r.usd || 0) - (r.paid_usd || 0))), backgroundColor:'rgba(201,150,40,0.35)', borderColor:css('--gold'), borderWidth:1, borderRadius:2, stack:'s'},
+      {type:'line', label:'收入 7 天平均', data:ma(TD.map(r => r.paid_usd || 0), 7), borderColor:css('--accent'), borderWidth:1.5, pointRadius:0, stack:'l'}]}, options:{scales:stk}});
+    mkChart('c-n6os', {evDates:tdd, type:'bar', data:{labels:tl, datasets:[['ord_paid', '计入收入', css('--gold')], ['ord_pending', '未确认', 'rgba(201,150,40,0.35)'], ['ord_test', '测试', css('--slate')], ['ord_refund', '退款', css('--bad')]]
       .map(([k, l, c]) => ({label:l, data:TD.map(r => r[k] || 0), backgroundColor:c, borderRadius:2, stack:'s'}))}, options:{scales:{x:{stacked:true}, y:{stacked:true, beginAtZero:true, ticks:{precision:0}}}}}); }
   if (PBk) { const days_ = N.daily.map(r => r.d), byd = Object.fromEntries(PBk.daily.map(x => [x.d, x]));
     mkChart('c-n6pb', {evDates:days_, type:'bar', data:{labels:days_.map(md), datasets:Object.keys(PBN).map((k, i) => ({label:PBN[k], data:days_.map(d => (byd[d] || {})[k] || 0), backgroundColor:[css('--good'), css('--accent'), css('--slate')][i], borderRadius:2, stack:'s'}))},
@@ -918,8 +918,8 @@ function n601Page(part){
   if (TA && TA.daily) { const td = TA.daily, b1 = TA.baseline / 7, tot = td.map(r => r.old + r.n601_paid + r.n601_other);
     mkChart('c-n6wk', {evDates:td.map(r => r.d), data:{labels:td.map(r => md(r.d)), datasets:[
       {type:'bar', label:'老服', data:td.map(r => r.old), backgroundColor:slate, borderRadius:2, stack:'s'},
-      {type:'bar', label:'601 确认到账', data:td.map(r => r.n601_paid), backgroundColor:gold, borderRadius:2, stack:'s'},
-      {type:'bar', label:'601 待核实', data:td.map(r => r.n601_other), backgroundColor:'rgba(201,150,40,0.35)', borderColor:gold, borderWidth:1, borderRadius:2, stack:'s'},
+      {type:'bar', label:'601 收入', data:td.map(r => r.n601_paid), backgroundColor:gold, borderRadius:2, stack:'s'},
+      {type:'bar', label:'601 未确认', data:td.map(r => r.n601_other), backgroundColor:'rgba(201,150,40,0.35)', borderColor:gold, borderWidth:1, borderRadius:2, stack:'s'},
       {type:'line', label:'合计 7 天平均', data:ma(tot, 7), borderColor:css('--violet'), borderWidth:2, pointRadius:0, stack:'l0'},
       {type:'line', label:'基线(每天)', data:td.map(() => b1), borderColor:acc, borderWidth:1.5, borderDash:[5,4], pointRadius:0, stack:'l1'},
       {type:'line', label:'目标 = 基线 × 1.5', data:td.map(() => b1 * 1.5), borderColor:css('--good'), borderWidth:1.5, borderDash:[2,3], pointRadius:0, stack:'l2'}]},

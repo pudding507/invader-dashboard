@@ -56,13 +56,13 @@ def main():
     L.append(f'## 二、601 核心数字 · {E[5:]} vs 前 7 天日均\n')
     L.append('| 指标 | 当天 | 前 7 天日均 | 口径 |\n|---|---:|---:|---|')
     rows = [('新建角色', lambda r: r['reg_old'] + r['reg_new'], '服务端'), ('其中广告安装', lambda r: r.get('reg_ad', 0), '埋点下限'),
-            ('活跃(活跃痕迹)', lambda r: r['act_old'] + r['act_new'], '代理'), ('确认付费人数', lambda r: r.get('paid_payers', 0), '服务端'),
-            ('确认到账(美元)', lambda r: r.get('paid_usd') or 0, '服务端'), ('待核实(美元)', lambda r: max(0, (r.get('usd') or 0) - (r.get('paid_usd') or 0)), '含待核实')]
+            ('活跃(活跃痕迹)', lambda r: r['act_old'] + r['act_new'], '代理'), ('付费人数', lambda r: r.get('paid_payers', 0), '服务端'),
+            ('收入(美元)', lambda r: r.get('paid_usd') or 0, '服务端'), ('其中 PayerMax(美元)', lambda r: r.get('paid_payermax') or 0, '按下单计入')]   # 2026-11-06 PayerMax 计入收入
     for nm, f, tag in rows:
         a = avg(f); isusd = '美元' in nm
         L.append(f'| {nm} | {money(f(y)) if isusd else f(y)} | {"—" if a is None else (money(a) if isusd else f"{a:.1f}")} | {tag} |')
     ol = {k: y.get(k, 0) for k in ('ord_paid', 'ord_pending', 'ord_test', 'ord_refund')}
-    L.append(f'\n- 当天订单:确认到账 {ol["ord_paid"]} 笔、待核实 / 未确认 {ol["ord_pending"]} 笔、测试 {ol["ord_test"]} 笔、退款 {ol["ord_refund"]} 笔。')
+    L.append(f'\n- 当天订单:计入收入 {ol["ord_paid"]} 笔、未确认 {ol["ord_pending"]} 笔、测试 {ol["ord_test"]} 笔、退款 {ol["ord_refund"]} 笔。')
     ck = [r for r in ((N.get('checkout') or {}).get('daily') or []) if r.get('d') == E]
     if ck: L.append(f'- 点击付费(Google / Apple):{ck[0]["click_users"]} 人点击、{ck[0]["order_users"]} 人下单、{ck[0]["paid_users"]} 人到账。')
     coh = [c for c in N.get('cohorts', []) if c.get('d1', {}).get('base')]

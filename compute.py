@@ -1423,7 +1423,7 @@ def top_problems(c, DATA):
 # - 活跃 = 当天有任一痕迹:每日任务 / 签到 / 名人每日任务 / 加速道具 / 付款 / 注册当天 / player.lastLoginTime 那天。仍会漏人(偏低)
 # - 601 库的时间是中国时间(UTC+8;用礼包下单的 UTC 毫秒时间戳对过,正好差 8 小时),和老服 Log 库的 timeCN 一致
 # - 老服账号 = monetId < 2,110,000(用旧号直接进 601);新建号 = 其余。新建号里也有老玩家换设备 / 建小号,这里分不出
-# - 充值:Google / Apple 订单按 New Era 支付表判断到账(2026-11-03 起);PayerMax 网页支付没有状态记录,仍是「待核实」
+# - 充值:Google / Apple 订单按 New Era 支付表判断到账(2026-11-03 起);PayerMax 网页支付没有状态记录,2026-11-06 起按下单计入收入
 N601_START = '2026-10-13'              # 内测开始;之前是支付联调期,注册和订单都不算
 # 601 版本、投放、活动日历(2026-11-04 加,用户确认):趋势图上按天标出,读数时当切点。时间都是新加坡 / 中国时间(UTC+8)。
 # 来源:B72 更新说明截图(invader/参考资料/版本说明/)、用户口述(投放)。活动开始后要按数据确认真的开了。
@@ -1441,6 +1441,7 @@ N601_EVENTS = [
     {'kind': '活动', 'name': '英雄升级', 'start': '2026-11-14 03:00', 'end': '2027-01-04 02:59', 'windows': [['2026-11-14 03:00', '2026-11-21 02:59']], 'note': '第一期 11-14 03:00 ~ 11-21 02:59,之后每 11 天一期'},
     {'kind': '道具', 'name': '限时票 1,500 张(5 位指定玩家)', 'start': None, 'end': None, 'note': '7 天有效,需单独发放,发放时间未定;读券数据时单列'},
 ]
+N6_COUNTED = ['paid', 'payermax']   # 2026-11-06 计入收入的订单状态:商店确认到账 + PayerMax(按下单计入)
 N6_WINDOWS = (1, 0)                    # 601 时间筛选:近 1 天 = 数据截至日全天(中国时间);0 = 内测以来。2026-11-05 用户:老板看趋势,去掉近 7 / 14 / 30 天
 N6_EV_WINDOWS = (0,)                   # 埋点块只算内测以来(趋势和表都看全部期间)
 # 2026-10-28 排除名单改为读 data/exclusions.json(所有报表共用一份);文件缺失或损坏时退回下面这份测试号
@@ -1534,6 +1535,8 @@ def n601(c, only=None):
         if x['rewards_done'] and (x['money_state'] == 'PROCESSED' or (x['channel'] == 'apple' and x['environment'] == 'production')): return 'paid'
         return 'unconfirmed'
     O['status'] = O.order_id.astype(str).map({str(x['order_id']): order_status(x) for x in m.get('N601_order status', [])}).fillna('pending')
+    # 2026-11-06(用户:老板意思是 PayerMax 直接计入收入,不再核对):PayerMax 订单没有状态记录,按下单计入,单列状态 payermax 便于以后扣除或核对
+    O.loc[(O.status == 'pending') & (O.channel == 'ThirdParty'), 'status'] = 'payermax'
     O.loc[O.why.isna() & (O.status == 'test'), 'why'] = '商店测试购买(Google 测试卡 / Apple 沙盒)'
     O.loc[O.why.isna() & (O.status == 'refund'), 'why'] = '已退款'
     O.loc[O.why.isna() & ~O.monetId.isin(all_ids), 'why'] = '角色已不在 601'
@@ -1548,9 +1551,10 @@ def n601(c, only=None):
     O_ = O[O.d >= pd.Timestamp(N601_START)] if 'd' in O else O
     # 各层互斥:每笔订单只归一层(和剔除原因 why 的先后顺序一致:测试号 → 商店测试 → 退款 → 其他)
     order_layers = [
-        {'name': '确认到账', 'note': 'Google / Apple:商店确认扣款,奖励已发放', 'counted': True, **lay(Ok[Ok.status == 'paid'])},
+        {'name': '商店确认到账', 'note': 'Google / Apple:商店确认扣款,奖励已发放', 'counted': True, **lay(Ok[Ok.status == 'paid'])},
         {'name': '已下单未确认', 'note': '有订单记录,商店还没确认或奖励未发', 'counted': False, **lay(Ok[Ok.status == 'unconfirmed'])},
-        {'name': '待核实', 'note': 'PayerMax 网页支付,没有到账状态记录', 'counted': False, **lay(Ok[Ok.status == 'pending'])},
+        {'name': 'PayerMax 网页支付', 'note': '没有到账状态记录,按下单计入收入(2026-11-06 起)', 'counted': True, **lay(Ok[Ok.status == 'payermax'])},
+        {'name': '无状态记录(非 PayerMax)', 'note': '订单表有记录、支付表里找不到', 'counted': False, **lay(Ok[Ok.status == 'pending'])},
         {'name': '退款', 'note': 'Google 状态为已退款', 'counted': False, **lay(O_[O_.why == '已退款'])},
         {'name': '测试号', 'note': '排除名单里的账号(不论用什么方式付)', 'counted': False, **lay(O_[O_.why == '清单内测试号'])},
         {'name': '测试卡 / 沙盒(非测试号)', 'note': 'Google 测试卡、Apple 沙盒', 'counted': False, **lay(O_[O_.why.fillna('').str.startswith('商店测试')])},
@@ -1905,7 +1909,7 @@ def n601(c, only=None):
         old_ = float(c.O[(c.O.d >= a0) & (c.O.d <= a1)].price.sum())
         wk = Ok[(Ok.d >= a0) & (Ok.d <= a1)]; n6 = float(wk.price.sum())
         # 2026-11-04(用户需求 5.10):601 拆成确认到账 / 待核实,待核实不并入确认收入
-        n6p = float(wk[wk.status == 'paid'].price.sum()) if 'status' in wk else n6
+        n6p = float(wk[wk.status.isin(N6_COUNTED)].price.sum()) if 'status' in wk else n6
         weeks.append({'from': a0.strftime('%Y-%m-%d'), 'to': a1.strftime('%Y-%m-%d'), 'days': (a1 - a0).days + 1, 'old': r(old_, 2), 'n601': r(n6, 2),
                       'n601_paid': r(n6p, 2), 'n601_other': r(n6 - n6p, 2)})
     base = [w['old'] for w in weeks if w['to'] < N601_START]
@@ -1981,9 +1985,9 @@ def n601(c, only=None):
         SRCN = [('fresh', '真新设备'), ('repeat', '同设备重复新号'), ('alt', '老玩家小号'), ('direct', '旧号直接进'), ('ad', '广告安装'), ('noid', '无广告 ID')]
         first7 = {'upto': (E - pd.Timedelta(days=6)).strftime('%Y-%m-%d'),
                   'rows': [dict(key=k_, name=nm, **(f7(M7[M7.src == k_]) or {'n': 0})) for k_, nm in SRCN] + [dict(key='all', name='全部', **(f7(M7) or {'n': 0}))]}
-    Ok['paid_usd'] = Ok.price.where(Ok.status == 'paid', 0.0)
+    Ok['paid_usd'] = Ok.price.where(Ok.status.isin(N6_COUNTED), 0.0)
     by_ch = Ok.groupby('pay_ch').agg(orders=('price', 'size'), usd=('price', 'sum'), payers=('monetId', 'nunique'),
-                                     paid=('status', lambda v: int((v == 'paid').sum())), paid_usd=('paid_usd', 'sum')).reset_index()
+                                     paid=('status', lambda v: int(v.isin(N6_COUNTED).sum())), paid_usd=('paid_usd', 'sum')).reset_index()
     excluded = O[O.why.notna()].groupby('why').agg(orders=('price', 'size'), usd=('price', 'sum'), users=('monetId', 'nunique')).reset_index()
     E7 = E - pd.Timedelta(days=6)
     a7 = Act[Act.d >= E7]
@@ -1991,7 +1995,7 @@ def n601(c, only=None):
            'reg7': int((P.reg >= E7).sum()), 'act_yday': int((Act.d == E).sum()), 'act7': int(a7.monetId.nunique()),
            'act_peak': max((x['act_old'] + x['act_new'] for x in daily), default=0),
            'usd': r(Ok.price.sum(), 2), 'paid_usd': r(Ok.paid_usd.sum(), 2), 'pending_usd': r(Ok.price.sum() - Ok.paid_usd.sum(), 2),
-           'paid_orders': int((Ok.status == 'paid').sum()), 'payers': int(Ok.monetId.nunique()), 'orders': int(len(Ok)),
+           'paid_orders': int((Ok.status.isin(N6_COUNTED)).sum()), 'payers': int(Ok.monetId.nunique()), 'orders': int(len(Ok)),
            'pay_rate': r(Ok.monetId.nunique() / len(P)) if len(P) else None}
     # 时间筛选(2026-11-03):新增、活跃、付费、渠道、商品、点击付费漏斗按窗口重算;留存、当前等级、来源等不随窗口变
     win = {}
@@ -1999,13 +2003,13 @@ def n601(c, only=None):
         lo = E - pd.Timedelta(days=w_ - 1) if w_ else start
         o_ = Ok[Ok.d >= lo]; a_ = Act[Act.d >= lo]; p_ = P[P.reg >= lo]
         bc = o_.groupby('pay_ch').agg(orders=('price', 'size'), usd=('price', 'sum'), payers=('monetId', 'nunique'),
-                                      paid=('status', lambda v: int((v == 'paid').sum())), paid_usd=('paid_usd', 'sum')).reset_index()
+                                      paid=('status', lambda v: int(v.isin(N6_COUNTED).sum())), paid_usd=('paid_usd', 'sum')).reset_index()
         win[str(w_)] = {'from': lo.strftime('%Y-%m-%d'), 'reg': int(len(p_)), 'reg_old': int((p_.grp == 'old').sum()),
                         'act': int(a_.monetId.nunique()), 'act_old': int(a_[a_.grp == 'old'].monetId.nunique()),
                         'payers': int(o_.monetId.nunique()), 'orders': int(len(o_)), 'usd': r(o_.price.sum(), 2), 'paid_usd': r(o_.paid_usd.sum(), 2),
                         'pending_usd': r(o_.price.sum() - o_.paid_usd.sum(), 2),
                         # 2026-11-05 总览补:确认付费人数(有已到账订单的人)、窗口内新建角色里现在已到主城 Lv3 的人
-                        'paid_payers': int(o_[o_.status == 'paid'].monetId.nunique()), 'reg_lv3': int((p_.city >= 3).sum()),
+                        'paid_payers': int(o_[o_.status.isin(N6_COUNTED)].monetId.nunique()), 'reg_lv3': int((p_.city >= 3).sum()),
                         'by_channel': [{'ch': x.pay_ch, 'orders': int(x.orders), 'usd': r(x.usd, 2), 'payers': int(x.payers), 'paid': int(x.paid), 'paid_usd': r(x.paid_usd, 2)} for _, x in bc.sort_values('usd', ascending=False).iterrows()],
                         'products': [{'name': k_, 'orders': int(len(v)), 'payers': int(v.monetId.nunique()), 'usd': r(v.price.sum(), 2)} for k_, v in sorted(o_.groupby('product'), key=lambda kv: -kv[1].price.sum())],
                         'checkout': funnel(CK[CK.d >= lo], store[store.d >= lo]) if checkout else None}
@@ -2013,13 +2017,14 @@ def n601(c, only=None):
     for row_ in daily:
         d_ = pd.Timestamp(row_['d']); od_ = Ok[Ok.d == d_]
         row_['paid_usd'] = r(float(od_.paid_usd.sum()), 2) if 'paid_usd' in od_ else None
-        row_['paid_payers'] = int(od_[od_.status == 'paid'].monetId.nunique())
+        row_['paid_payers'] = int(od_[od_.status.isin(N6_COUNTED)].monetId.nunique())
         row_['reg_ad'] = int(((P.reg == d_) & (P.src == 'ad')).sum()) if 'src' in P else 0
         # 2026-11-05 改按天(用户:按周看不出来):每天按渠道的确认到账、订单按状态分层(各层互斥,和「订单状态分层」同口径)
         row_['paid_google'] = r(float(od_[od_.pay_ch == 'Google'].paid_usd.sum()), 2) if 'paid_usd' in od_ else 0
         row_['paid_apple'] = r(float(od_[od_.pay_ch == 'Apple'].paid_usd.sum()), 2) if 'paid_usd' in od_ else 0
+        row_['paid_payermax'] = r(float(od_[od_.pay_ch == 'PayerMax(网页)'].paid_usd.sum()), 2) if 'paid_usd' in od_ else 0   # 2026-11-06 PayerMax 按下单计入
         oa_ = O[O.d == d_]
-        row_['ord_paid'] = int((od_.status == 'paid').sum()); row_['ord_pending'] = int(od_.status.isin(['pending', 'unconfirmed']).sum())
+        row_['ord_paid'] = int(od_.status.isin(N6_COUNTED).sum()); row_['ord_pending'] = int(od_.status.isin(['pending', 'unconfirmed']).sum())
         row_['ord_test'] = int(oa_.why.isin(['清单内测试号']).sum() + oa_.why.fillna('').str.startswith('商店测试').sum())
         row_['ord_refund'] = int((oa_.why == '已退款').sum())
     # 两 App 合计按天(2026-11-05 改按天):内测开始前 14 天起;老服 = 老服订单(不含 601),601 拆确认到账 / 待核实;基线按天 = 周基线 ÷ 7
@@ -2301,7 +2306,7 @@ def n601_client(c, N, w=None, seg=None):
                          {'name': '第 7 天回来(D7)', 'n': R7['n'], 'base': R7['base'], 'src': '活跃痕迹,只算满 7 天的'},
                          {'name': '打开过商店', 'n': int(len(ids & set(so.user_id))), 'src': '埋点,下限'},
                          {'name': '发起过 Google / Apple 支付', 'n': int(len(ids & (set(CK[CK.server_id == 601].monetId) if len(CK) else set()))), 'src': '支付表'},
-                         {'name': '付费(含 PayerMax 待核实)', 'n': k['payers'], 'src': '订单表'},
+                         {'name': '付费(含 PayerMax)', 'n': k['payers'], 'src': '订单表'},
                          {'name': '其中有已到账订单(Google / Apple)', 'n': n6_paid_users(m, ids), 'src': '订单表 + New Era 支付表'}],
              'pending': ['首次打开(E002 entry,B72 起有数据)', '引导每一步(E023 step_id,B72 起有数据)', '发起购买(E126,未发版)', '支付结果(E127,未发版)']}   # 2026-11-04 按 11-03 定稿编号更正(原写 E126 / E130 / E128 是重编号前的)
     # 钻石存量、小游戏
@@ -2722,9 +2727,10 @@ def consistency_checks(c, DATA):
     # 2026-11-03:Google / Apple 订单改用 New Era 支付表的到账状态;PayerMax 和老服订单仍没有状态
     st_ = [x for x in N['by_channel'] if x['ch'] in ('Google', 'Apple')]
     so, sp = sum(x['orders'] for x in st_), sum(x['paid'] for x in st_)
-    pm = sum(x['orders'] - x['paid'] for x in N['by_channel'] if x['ch'] not in ('Google', 'Apple'))
-    add('601', '订单到账状态', 'Google / Apple 订单都应有商店扣款确认并发完奖励', 'warn' if sp < so else ('na' if pm else 'pass'),
-        f'Google / Apple {so} 笔里已到账 {sp} 笔' + (f';PayerMax {pm} 笔没有状态记录' if pm else ''),
+    pm = sum(x['orders'] for x in N['by_channel'] if x['ch'] not in ('Google', 'Apple'))
+    # 2026-11-06:PayerMax 按下单计入收入,不再算「无法判断」;本项只查 Google / Apple
+    add('601', '订单到账状态', 'Google / Apple 订单都应有商店扣款确认并发完奖励', 'warn' if sp < so else 'pass',
+        f'Google / Apple {so} 笔里已到账 {sp} 笔' + (f';PayerMax {pm} 笔按下单计入' if pm else ''),
         '状态来自 New Era 支付表(收据、扣款确认、奖励发放);PayerMax 状态表已建、还没有数据;老服订单表只有下单记录')
     return out
 
@@ -2966,7 +2972,7 @@ def ai_lists(c, DATA):
     F_ = c.first_order[c.first_order <= E]
     f0 = int(((F_ > E - pd.Timedelta(days=28)) & (F_ <= E)).sum()); f1 = int(((F_ > E - pd.Timedelta(days=56)) & (F_ <= E - pd.Timedelta(days=28))).sum())
     n6p = sum(x['payers'] for x in (N.get('daily') or [])[-28:])
-    dz.append({'name': '2 没有新的付费用户进来', 'status': _trend(f0, f1, thr=0.2, min_n=10), 'basis': f'老服首次付费人数 近 28 天 {f0} 人,前 28 天 {f1} 人;601 近 28 天付费人次 {n6p}(含 PayerMax 待核实)',
+    dz.append({'name': '2 没有新的付费用户进来', 'status': _trend(f0, f1, thr=0.2, min_n=10), 'basis': f'老服首次付费人数 近 28 天 {f0} 人,前 28 天 {f1} 人;601 近 28 天付费人次 {n6p}(含 PayerMax)',
                'guard': '老玩家换号会冒充新付费;601 按设备来源分组看'})
     nd = pd.DataFrame(DATA['new_user']['daily']['series']['all'], columns=DATA['new_user']['daily']['columns'])
     a_, b_ = nd.iloc[-29:-1], nd.iloc[-57:-29]
