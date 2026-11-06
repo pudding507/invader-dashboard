@@ -736,8 +736,28 @@ function n601Page(part){
     <div class="tw" style="max-height:300px"><table><thead><tr><th>成就编号</th><th>完成人数</th><th>占内测玩家</th></tr></thead><tbody>${N.achievements.rows.filter(x => x[1] > 0).sort((a,b) => b[1]-a[1]).map(x => `<tr><td>${x[0]}</td><td>${fi(x[1])}</td><td>${fp(x[1]/N.achievements.n,0)}</td></tr>`).join('')}</tbody></table></div>
     <div class="note">没人完成的:${N.achievements.rows.filter(x => !x[1]).map(x => x[0]).join('、') || '无'}</div></div>` : ''}
   </div>
-  <div class="card"><h3>活动参与</h3><div class="sub">只列内测玩家有记录的活动;多数活动在 ${esc(N.start)} 内测开始前就结束了</div>
-   <div class="tw"><table><thead><tr><th>活动</th><th>时间</th><th>有积分的人</th><th>有记录的人</th><th>领过奖的人</th></tr></thead><tbody>${(N.activities||[]).map(x => `<tr><td class="l">${esc(x.name)}</td><td>${esc(x.open.slice(5))} ~ ${esc(x.close.slice(0,4) > '2027' ? '长期' : x.close.slice(5))}</td><td>${fi(x.with_points)}</td><td>${fi(x.records)}</td><td>${fi(x.claimed)}</td></tr>`).join('')}</tbody></table></div></div>`;
+`;
+  // 2026-11-06 601 新表(用户确认):战斗逐场、建筑升级逐次、钻石去向、新活动、限时票。11-04 起才有数据
+  const NX = D.n601_new || {}, NXd = NX.dates || [], NXl = NXd.map(md);
+  const NXnote = `<span class="note" style="font-weight:400"> · ${esc(NX.from || '')} 起有数据,不随时间筛选</span>`;
+  const sBattle = NX.battles ? `<h2>战斗与入侵 · 逐场${NXnote}</h2><div class="grid">
+   <div class="card"><h3>每天的战斗 · 按类型</h3><div class="sub">每场战斗一行(服务端记录);侵略玩家城含打已被别人占着的城</div><div class="chart" style="height:200px"><canvas id="c-nxbt"></canvas></div></div>
+   <div class="card"><h3>各类战斗的结果</h3><div class="sub">「有结果」= 有结束记录的场次(没有的多为中途退出或还没回报);胜率、占领只在有结果的场次里算</div>
+    <div class="tw"><table><thead><tr><th>类型</th><th>场次</th><th>人数</th><th>有结果</th><th>攻方胜</th><th>占领</th></tr></thead><tbody>${NX.battles.by_cat.filter(x => x.n).map(x => `<tr><td class="l">${esc(x.cat)}</td><td>${fi(x.n)}</td><td>${fi(x.users)}</td><td>${fi(x.ended)}</td><td>${x.ended ? `${fp(x.won / x.ended, 0)}<span class="note"> ${x.won}/${x.ended}</span>` : '—'}</td><td>${x.occupied ? fi(x.occupied) : '—'}</td></tr>`).join('')}</tbody></table></div></div></div>` : '';
+  const BX = NX.buildings;
+  const sBuildOps = BX ? `<div class="card"><h3>建筑升级 · 服务端逐次</h3><div class="sub">每次发起升级一行(服务端,${fi(BX.n)} 次、${fi(BX.users)} 人);表里带「同意范围」字段,可能只记同意采集的玩家,覆盖范围待研发确认。上图每天按建筑类型,下表是主城每一级的升级次数</div>
+   <div class="chart" style="height:200px"><canvas id="c-nxbo"></canvas></div>
+   <div class="tw"><table><thead><tr><th>主城升级</th><th>次数</th></tr></thead><tbody>${BX.city_steps.map(x => `<tr><td>${esc(x[0])}</td><td>${fi(x[1])}</td></tr>`).join('')}</tbody></table></div>
+   <div class="note">11-04 起注册、发起过主城 2 → 3 级升级的 ${fi(BX.to3_n)} 人,从建号到发起升级的时间中位数 ${BX.to3_p50_h == null ? '—' : BX.to3_p50_h + ' 小时'}</div></div>` : '';
+  const WX = NX.wallet;
+  const sWallet = WX ? `<h2>601 钻石去向${NXnote}</h2><div class="grid">
+   <div class="card"><h3>每天花掉的钻石 · 按去向</h3><div class="sub">每次花钻石一行(服务端钱包记录);取花得最多的 6 个去向,其余并入「其他」</div><div class="chart" style="height:220px"><canvas id="c-nxws"></canvas></div></div>
+   <div class="card"><h3>各去向合计</h3><div class="sub">共 ${fi(WX.dia)} 钻、${fi(WX.n)} 次、${fi(WX.users)} 人</div><div class="tw" style="max-height:300px"><table><thead><tr><th>去向</th><th>钻石</th><th>占比</th><th>次数</th><th>人数</th></tr></thead><tbody>${WX.by.map(x => `<tr><td class="l">${esc(x.nm)}</td><td>${fi(x.dia)}</td><td>${fp(WX.dia ? x.dia / WX.dia : null, 0)}</td><td>${fi(x.n)}</td><td>${fi(x.users)}</td></tr>`).join('')}</tbody></table></div></div></div>` : '';
+  const AX = NX.activities, TKX = NX.tickets;
+  const sActs = AX ? `<h2>活动${NXnote}</h2><div class="card"><h3>新活动 · 排期与参与</h3><div class="sub">排期来自库里的活动表(服务端构建 56 / B72 起);状态按当前时间;参与人数 / 积分来自活动积分记录,发奖在活动结束结算后才有。充值类活动的参与要看充值活动表(还没有数据)</div>
+   <div class="tw"><table><thead><tr><th>活动</th><th>期数</th><th>第一期开始</th><th>最后一期结束</th><th>状态</th><th>有积分的人</th><th>积分</th><th>发奖</th></tr></thead><tbody>${AX.map(x => `<tr><td class="l">${esc(x.name)}</td><td>${fi(x.periods)}</td><td>${esc(x.first)}</td><td>${esc(x.last)}${x.odd_end ? '<span class="note"> 只有一期却持续一年,库里如此,待核实</span>' : ''}</td><td>${esc(x.now)}</td><td>${x.users ? fi(x.users) : '—'}</td><td>${x.points ? fi(x.points) : '—'}</td><td>${x.rewards ? fi(x.rewards) : '—'}</td></tr>`).join('')}</tbody></table></div>
+   ${NX.act_daily && NX.act_daily.rows.some(r => NX.act_daily.keys.some(k => r[k])) ? `<div class="chart" style="height:180px"><canvas id="c-nxad"></canvas></div><div class="note">上图:每天在各活动里有积分的人</div>` : ''}</div>
+   ${TKX ? `<div class="card"><h3>限时票 · 发放与使用</h3><div class="sub">限时道具和活动券(主要是老虎机 / 宠物竞猜券 52001);累计发 ${fi(TKX.issued)} 张、用 ${fi(TKX.used)} 张、${fi(TKX.users_used)} 人用过</div><div class="chart" style="height:180px"><canvas id="c-nxtk"></canvas></div></div>` : ''}` : '';
   // 2026-11-04 新手与首日成长(用户需求 5.3):引导、主城 Lv1→Lv3、注册当天、新人前 7 天、建筑升级与受阻
   const sGuideCard = (N.guide ? `<div class="card"><h3>新手引导</h3><div class="sub">完成过各引导步骤的人数(共 ${fi(N.guide.n)} 人)。<b>库里只有步骤编号,没有名称</b>;200、201、202、210、299 几乎所有人都走过,是新手主线</div>
     <div class="tw"><table><thead><tr><th>主线步骤</th><th>完成人数</th><th>占比</th></tr></thead><tbody>${N.guide.main.map(x => `<tr><td>${x[0]}</td><td>${fi(x[1])}</td><td>${fp(x[1]/N.guide.n,0)}</td></tr>`).join('')}</tbody></table></div>
@@ -821,14 +841,14 @@ function n601Page(part){
     n601:  [sToday, sBanner, intro('601 内测整体情况:规模、留存、付费的关键数字、逐日趋势和从获客到付费的全链路;每一步的细节在后面的页签。'), sKpi, sTrend, EV.chain, sCal, sTA],
     n6tech:[sBanner, intro('玩家从哪里来、装上之后能不能顺利进入游戏:安装来源、新老玩家来源、启动到登录。'), kp('acq', 'newdev', 'startup'), EV.acq, sOrigin, EV.techStart, sRegVer],
     n6first:[sBanner, intro('新玩家进来后的头几天:注册当天做了什么、新手引导、主城 Lv1 → Lv3、建筑升级与受阻、新人前 7 天。引导步骤漏斗要等研发给步骤顺序表。'),
-             EV.first, H2('新手引导', '不随时间筛选') + `<div class="grid">${sGuideCard}${EV.steps}</div>`, sReach + (EV.lv3 || ''), EV.build ? H2('建筑升级与受阻') + EV.build : '', sFirst7 ? H2('新人前 7 天', '不随时间筛选') + sFirst7 + (EV.f7 || '') : ''],
+             EV.first, H2('新手引导', '不随时间筛选') + `<div class="grid">${sGuideCard}${EV.steps}</div>`, sReach + (EV.lv3 || ''), EV.build || sBuildOps ? H2('建筑升级与受阻') + (EV.build || '') + sBuildOps : '', sFirst7 ? H2('新人前 7 天', '不随时间筛选') + sFirst7 + (EV.f7 || '') : ''],
     n6new: [sBanner, intro('进入以后留不留得住:每日新增与活跃、按来源的留存(活跃痕迹和埋点会话两种口径)、游戏时长与时段。'), kp('act', 'd1', 'playtime'), sScale, sRet, EV.dual, EV.sess],
-    n6grow:[sBanner, intro('留下来的人玩到哪、玩什么:主城等级随时间、建筑与英雄、玩法参与、成就、活动、小游戏。'), EV.palace, sGrow, EV.games],
-    n6pay: [sBanner, intro('付费规模与到账情况:确认到账和待核实分开;渠道与商品、点击到到账的链路、付费玩家、钻石存量。'), kp('pay', 'paidpayers', 'pending', 'payrate'), sPayTrend, sLayers, sPost, sPay, EV.shop, EV.dia],
+    n6grow:[sBanner, intro('留下来的人玩到哪、玩什么:主城等级随时间、建筑与英雄、玩法参与、成就、战斗与入侵、活动、小游戏。'), EV.palace, sGrow, sBattle, sActs, EV.games],
+    n6pay: [sBanner, intro('付费规模与到账情况:确认到账和待核实分开;渠道与商品、点击到到账的链路、付费玩家、钻石存量。'), kp('pay', 'paidpayers', 'pending', 'payrate'), sPayTrend, sLayers, sPost, sPay, EV.shop, EV.dia, sWallet],
     n6dq:  [intro('客户端性能和数据本身的可靠性:加载与帧率、请求失败与异常、埋点覆盖与字段质量。本页始终是全部玩家,不随平台、国家、版本筛选。'), kp('coverage'), EV.techPerf, EV.dq]};
   // 2026-11-04 口径标签(用户需求 4.2「强制展示」):每张卡标数据来自哪类口径,按卡片标题前缀匹配
   const SRC_TAG = {
-    '服务端': ['每日新增角色', '回流用户与新用户切分', '老服大 R 进入 601', '新手引导', '主城 Lv2', '每天各主城等级', '等级成长速度', '主城等级分布', '各建筑 / 英雄等级', '玩法参与', '成就完成', '活动参与', '宠物竞猜与老虎机', '渠道构成', '已剔除的订单', '商品构成', '点击付费漏斗', '按天', '付费玩家', '玩家手里的钻石', '周付费', '每日付费:老服', '订单状态分层', '每日充值', '每日订单', '点击付费 → 下单', '新建角色', '充值:确认到账', '付费人数', '付费回传 Meta'],
+    '服务端': ['每日新增角色', '回流用户与新用户切分', '老服大 R 进入 601', '新手引导', '主城 Lv2', '每天各主城等级', '等级成长速度', '主城等级分布', '各建筑 / 英雄等级', '玩法参与', '成就完成', '活动参与', '宠物竞猜与老虎机', '渠道构成', '已剔除的订单', '商品构成', '点击付费漏斗', '按天', '付费玩家', '玩家手里的钻石', '周付费', '每天的战斗', '各类战斗的结果', '建筑升级 · 服务端逐次', '每天花掉的钻石', '各去向合计', '新活动', '限时票', '每日付费:老服', '订单状态分层', '每日充值', '每日订单', '点击付费 → 下单', '新建角色', '充值:确认到账', '付费人数', '付费回传 Meta'],
     '埋点下限': ['安装 → 登录', '每日启动漏斗', '启动各阶段耗时', '启动失败', '客户端版本', '注册当天游戏时长', '建筑升级怎么完成', '引导步骤 · 埋点', '建筑升级 · 按类型', '单次会话时长', '一天里什么时候在玩', '每人每天游戏时长', '商店 → 付费', '从哪里进商店', '每天打开商店', '页面加载耗时', '战斗帧率', '关键请求失败', '客户端异常', '每天埋点覆盖', '字段可用性', '各事件条数', '新安装按来源', '各来源合计', '注册后多久到主城 Lv3', '页面加载耗时 · 按天', '战斗低于 30 帧', '每人每天游戏时长', '启动到登录成功率', '会话结束时停在', '会话怎么结束', '启动与加载 · 按系统版本'],
     '代理': ['活跃(活跃痕迹)', 'D1 留存 · 按注册日', '每日活跃', '留存:老服账号 vs 新建号', '新人留存:按来源', '按注册日 × 来源', '新人前 7 天 · 按来源'],
     '混合': ['新人前 7 天 · 逐日', '建角色 → 付费', '留存双轨', '每日明细', '老服账号近 3 日活跃', '老服账号每日活跃', '新账号按建号时的版本'],
@@ -877,6 +897,13 @@ function n601Page(part){
         const ser = (TDm[key] || {})[b.dataset.v] || {}, ks = Object.keys(ser).filter(k => ser[k].some(v => v));
         mkChart(id, {evDates:dds, type:'bar', data:{labels:dlab, datasets:ks.map((k, i) => ({label:b.dataset.v === '国家' && !k.startsWith('其他') ? cname(k) : k, data:ser[k], backgroundColor:pal[i % pal.length], borderRadius:2, stack:'s'}))},
           options:{scales:{x:{stacked:true}, y:{stacked:true, beginAtZero:true}}}}); }); }); }
+  { const stk = {x:{stacked:true}, y:{stacked:true, beginAtZero:true}}, pal = [css('--accent'), css('--gold'), css('--slate'), css('--violet'), css('--good'), css('--bad'), 'rgba(120,120,140,0.5)'];
+    const bars = (id, keys, rows) => mkChart(id, {evDates:NXd, type:'bar', data:{labels:NXl, datasets:keys.map((k, i) => ({label:k, data:rows.map(r => r[k] || 0), backgroundColor:pal[i % pal.length], borderRadius:2, stack:'s'}))}, options:{scales:stk}});
+    if (NX.battles) bars('c-nxbt', NX.battles.cats.filter(k => NX.battles.by_cat.find(x => x.cat === k).n), NX.battles.daily);
+    if (NX.buildings) bars('c-nxbo', NX.buildings.keys, NX.buildings.daily);
+    if (NX.wallet) bars('c-nxws', NX.wallet.keys, NX.wallet.daily);
+    if (NX.act_daily && NX.act_daily.rows.some(r => NX.act_daily.keys.some(k => r[k]))) bars('c-nxad', NX.act_daily.keys, NX.act_daily.rows);
+    if (NX.tickets) mkChart('c-nxtk', {evDates:NXd, type:'bar', data:{labels:NXl, datasets:[{label:'发放', data:NX.tickets.daily.map(r => r.issued), backgroundColor:css('--gold'), borderRadius:2}, {label:'使用', data:NX.tickets.daily.map(r => r.used), backgroundColor:css('--accent'), borderRadius:2}]}, options:{scales:{x:{}, y:{beginAtZero:true}}}}); }
   mkChart('c-n6reg', {evDates:N.daily.map(r=>r.d), type:'bar', data:{labels:N.daily.map(r => md(r.d)), datasets:[{label:'新建号', data:N.daily.map(r=>r.reg_new), backgroundColor:acc, borderRadius:3}, {label:'老服账号', data:N.daily.map(r=>r.reg_old), backgroundColor:gold, borderRadius:3}]}, options:{scales:stack}});
   mkChart('c-n6act', {evDates:N.daily.map(r=>r.d), type:'bar', data:{labels:N.daily.map(r => md(r.d)), datasets:[{label:'新建号', data:N.daily.map(r=>r.act_new), backgroundColor:acc, borderRadius:3}, {label:'老服账号', data:N.daily.map(r=>r.act_old), backgroundColor:gold, borderRadius:3}]}, options:{scales:stack}});
   if (M) { const mg = M.daily, si = mg.findIndex(r => r.n601 != null);

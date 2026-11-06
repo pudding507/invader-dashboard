@@ -2444,6 +2444,112 @@ def n601_client(c, N, w=None, seg=None):
             'ret_dual': dual, 'steps': steps, 'lv3': lv3, 'os': osv, 'first7_daily': f7d, 'ver_daily': ver_daily, 'end_daily': end_daily, 'stage_daily': stage_daily}
 
 
+# ---------------------------------------------------------------- 601 新表(2026-11-06,用户确认:战斗逐场、建筑升级逐次、钻石去向、新活动)
+N6_ACT_NAME = {'ConsumptionCarnival': '消费嘉年华', 'FullRechargeRebate': '充值返利', 'RechargeDoubleBonus': '充值双倍', 'CashGiftCatalog': '每日惊喜礼包',
+               'DiamondShopCatalog': '限时钻石商店', 'PassionLeveling': '英雄升级'}
+N6_SPEND_NAME = {'PetQuiz': '宠物竞猜', 'SlotSpin': '老虎机', 'UpgradeBuilding': '建筑升级', 'FinishUpgradeBuilding': '建筑加速完成', 'GoToBtnFromRank': '排行榜前往',
+                 'BuyHeroArenaTimes': '竞技场买次数', 'BuyHeroArenaDailyPrize': '竞技场每日奖', 'LuckyDrawOneTime': '抽奖 1 次', 'LuckyDrawTenTimes': '抽奖 10 次',
+                 'LuckyDrawHundredTimes': '抽奖 100 次', 'AddSpace': '扩容', 'FinishProduceSoldier': '练兵加速完成', 'FinishUpgradeSoldier': '士兵升级加速',
+                 'ProduceSoldier': '练兵', 'Dungeons2': '副本 2', 'Dungeons2Sweep': '副本 2 扫荡', 'Dungeons3Sweep': '副本 3 扫荡', 'DungeonsSweep': '副本扫荡',
+                 'Dungeons': '副本', 'Shop': '商店', 'AttackAllianceMember': '攻打盟友', 'CreateAlliance': '创建联盟', 'Fuse': '合成', 'FinishUpgradeSoul': '士魂升级加速',
+                 'BuyHeroMana': '英雄法力', 'BuyHeroLife': '英雄生命', 'Bubble': '气泡', 'CityProfiling': '城市装扮', 'Skill': '技能', 'UserHead': '头像', 'ContributeAlliance': '联盟捐献'}
+
+def _ms_cn(x):
+    return pd.to_datetime(pd.to_numeric(x, errors='coerce'), unit='ms') + pd.Timedelta(hours=8)
+
+
+def n601_activity_events(c):
+    """新活动排期(库里的 NewEraActivityPeriodV1)→ 日历和趋势图的活动条目。同一活动同一时段多个商品的(限时钻石商店)合并成一条。"""
+    PR = pd.DataFrame(c.raw.get('N601_activity periods', []))
+    if not len(PR): return []
+    PR['o'] = _ms_cn(PR.open_ms); PR['c'] = _ms_cn(PR.close_ms)
+    out = []
+    for t_, g in PR.groupby('template', sort=False):
+        nm = N6_ACT_NAME.get(t_, t_)
+        wins = sorted({(o.strftime('%Y-%m-%d %H:%M'), c_.strftime('%Y-%m-%d %H:%M')) for o, c_ in zip(g.o, g.c)})
+        out.append({'kind': '活动', 'name': nm, 'start': wins[0][0], 'end': wins[-1][1], 'windows': [list(w) for w in wins],
+                    'note': f"{len(wins)} 期" + (f",每期 {len(g) // len(wins)} 个商品" if len(g) > len(wins) else '') + f";库里排期(template = {t_})", 'from_db': True})
+    return sorted(out, key=lambda x: x['start'])
+
+
+def n601_newtables(c):
+    m = c.raw; E = c.end; ex, _, _ = load_exclusions('n601')
+    start = pd.Timestamp('2026-11-04'); days = pd.date_range(start, E); ds = [d.strftime('%Y-%m-%d') for d in days]
+    out = {'from': '2026-11-04', 'dates': ds}
+    # 战斗逐场
+    B = pd.DataFrame(m.get('N601_battles', []))
+    if len(B):
+        B = B[~B.monetId.isin(ex)]; B['t'] = _ms_cn(B.started_ms); B['d'] = B.t.dt.normalize(); B['ended'] = B.ended_ms.notna()
+        def cat(r):
+            if r.mode_id in (2, 17) and r.target_type in ('player', 'player_occupied'): return '侵略玩家城'
+            if r.target_type == 'npc' and r.mode_id in (2, 11): return '侵略 NPC 城'
+            if r.mode_id == 5: return '反抗'
+            if r.mode_id == 13: return '英雄竞技场'
+            if r.target_type == 'stage': return '关卡 / 副本'
+            return '其他'
+        B['cat'] = [cat(r) for r in B.itertuples()]
+        cats = ['侵略玩家城', '侵略 NPC 城', '反抗', '英雄竞技场', '关卡 / 副本', '其他']
+        out['battles'] = {'cats': cats, 'daily': [{'d': d.strftime('%Y-%m-%d'), **{k: int(((B.d == d) & (B.cat == k)).sum()) for k in cats}} for d in days],
+                          'by_cat': [{'cat': k, 'n': int((B.cat == k).sum()), 'users': int(B[B.cat == k].monetId.nunique()), 'ended': int(B[B.cat == k].ended.sum()),
+                                      'won': int(B[(B.cat == k) & B.ended].won.fillna(0).sum()), 'occupied': int(B[(B.cat == k) & B.ended].occupied.fillna(0).sum())} for k in cats]}
+    # 建筑升级逐次
+    BO = pd.DataFrame(m.get('N601_building ops', []))
+    if len(BO):
+        BO = BO[~BO.monetId.isin(ex)]; BO['t'] = _ms_cn(BO.started_ms); BO['d'] = BO.t.dt.normalize()
+        tps = [N6_BTYPE.get(int(k), str(k)) for k in BO.building_type.value_counts().index[:6]]
+        BO['nm'] = BO.building_type.map(lambda k: N6_BTYPE.get(int(k), str(k))); BO.loc[~BO.nm.isin(tps), 'nm'] = '其他'
+        keys = tps + (['其他'] if (BO.nm == '其他').any() else [])
+        city = BO[BO.building_type == 5]
+        P = pd.DataFrame(m.get('N601_players detail', [])); ct = pd.to_datetime(P.drop_duplicates('monetId').set_index('monetId').created_at, format='mixed') if len(P) else pd.Series(dtype='datetime64[ns]')
+        to3 = city[city.from_level == 2].groupby('monetId').t.min()
+        hrs = [(to3[u] - ct[u]).total_seconds() / 3600 for u in to3.index if u in ct.index and ct[u] >= start]
+        out['buildings'] = {'keys': keys, 'n': int(len(BO)), 'users': int(BO.monetId.nunique()),
+                            'daily': [{'d': d.strftime('%Y-%m-%d'), **{k: int(((BO.d == d) & (BO.nm == k)).sum()) for k in keys}} for d in days],
+                            'city_steps': [[f'{int(l)} → {int(l) + 1}', int(v)] for l, v in city.from_level.value_counts().sort_index().items()],
+                            'to3_n': len(hrs), 'to3_p50_h': r(float(pd.Series(hrs).median()), 1) if hrs else None}
+    # 钻石去向
+    W = pd.DataFrame(m.get('N601_wallet spend', []))
+    if len(W):
+        W = W[~W.monetId.isin(ex)]; W['t'] = _ms_cn(W.occurred_ms); W['d'] = W.t.dt.normalize()
+        def dia(f_):
+            try: return sum(float(x.get('actualDiamond', 0) or 0) for x in json.loads(f_ or '[]'))
+            except Exception: return 0.0
+        W['dia'] = W.fees.map(dia); W['nm'] = W.consumer.map(lambda k: N6_SPEND_NAME.get(k, k))
+        tot = W.groupby('nm').agg(dia=('dia', 'sum'), n=('dia', 'size'), users=('monetId', 'nunique')).sort_values('dia', ascending=False)
+        top = list(tot.index[:6]); W.loc[~W.nm.isin(top), 'nm'] = '其他'; keys = top + (['其他'] if (W.nm == '其他').any() else [])
+        out['wallet'] = {'keys': keys, 'dia': float(W.dia.sum()), 'n': int(len(W)), 'users': int(W.monetId.nunique()),
+                         'daily': [{'d': d.strftime('%Y-%m-%d'), **{k: float(W[(W.d == d) & (W.nm == k)].dia.sum()) for k in keys}} for d in days],
+                         'by': [{'nm': k_, 'dia': float(v.dia), 'n': int(v.n), 'users': int(v.users)} for k_, v in tot.iterrows()]}
+    # 新活动:参与、积分、发奖
+    PR = pd.DataFrame(m.get('N601_activity periods', [])); CO = pd.DataFrame(m.get('N601_activity contrib', []))
+    if len(PR):
+        PR['o'] = _ms_cn(PR.open_ms); PR['c'] = _ms_cn(PR.close_ms); tmpl = PR.set_index('period_key').template
+        rows = []
+        for t_, g in PR.groupby('template', sort=False):
+            pk = set(g.period_key)
+            cc = CO[CO.period_key.isin(pk) & (CO.kind == 'contrib') & ~CO.monetId.isin(ex)] if len(CO) else pd.DataFrame()
+            rw = CO[CO.period_key.isin(pk) & (CO.kind == 'reward') & ~CO.monetId.isin(ex)] if len(CO) else pd.DataFrame()
+            cur = g[(g.o <= pd.Timestamp.now()) & (g.c > pd.Timestamp.now())]
+            rows.append({'name': N6_ACT_NAME.get(t_, t_), 'periods': int(g[['o', 'c']].drop_duplicates().shape[0]), 'first': g.o.min().strftime('%Y-%m-%d %H:%M'), 'last': g.c.max().strftime('%Y-%m-%d %H:%M'),
+                         'odd_end': bool(len(g[['o', 'c']].drop_duplicates()) == 1 and (g.c.max() - g.o.min()).days > 60),   # 只有一期却持续两个月以上
+                         'now': '进行中' if len(cur) else ('已结束' if g.c.max() < pd.Timestamp.now() else '未开始'),
+                         'users': int(cc.monetId.nunique()) if len(cc) else 0, 'points': float(cc.amount.sum()) if len(cc) else 0.0, 'rewards': int(len(rw))})
+        out['activities'] = sorted(rows, key=lambda x: x['first'])
+        if len(CO):
+            C2 = CO[(CO.kind == 'contrib') & ~CO.monetId.isin(ex)].copy(); C2['d'] = (pd.to_datetime(C2['at'], format='mixed') + pd.Timedelta(hours=8)).dt.normalize(); C2['nm'] = C2.period_key.map(tmpl).map(lambda t_: N6_ACT_NAME.get(t_, t_))
+            ks = list(C2.nm.dropna().unique())
+            out['act_daily'] = {'keys': ks, 'rows': [{'d': d.strftime('%Y-%m-%d'), **{k: int(C2[(C2.d == d) & (C2.nm == k)].monetId.nunique()) for k in ks}} for d in days]}
+    # 限时票(活动积分、限时票的 createdAt 都是 UTC,+8 小时;11-06 核对:最早一条积分 21:16 UTC,活动 21:00 UTC 开始)
+    TK = pd.DataFrame(m.get('N601_tickets', []))
+    if len(TK):
+        TK = TK[~TK.monetId.isin(ex)].copy()
+        TK['t'] = pd.to_datetime(TK['at'], format='mixed', errors='coerce') + pd.Timedelta(hours=8); miss = TK.t.isna(); TK.loc[miss, 't'] = _ms_cn(TK.loc[miss, 'at_ms']); TK['d'] = TK.t.dt.normalize()
+        out['tickets'] = {'issued': float(TK[TK.kind.isin(['grant', 'lot'])].amount.sum()), 'used': float(TK[TK.kind == 'use'].amount.sum()),
+                          'users_used': int(TK[TK.kind == 'use'].monetId.nunique()),
+                          'daily': [{'d': d.strftime('%Y-%m-%d'), 'issued': float(TK[(TK.d == d) & TK.kind.isin(['grant', 'lot'])].amount.sum()), 'used': float(TK[(TK.d == d) & (TK.kind == 'use')].amount.sum())} for d in days]}
+    return out
+
+
 def n601_segments(c):
     """601 每个内测玩家的平台、版本、国家(2026-11-04)。
     平台:埋点最近一条的平台 > 角色表客户端类型(googleClient / iosClient)> 账号建号系统;
@@ -2921,7 +3027,10 @@ def build(raw):
     DATA['rev_func'] = safe(lambda: revenue_by_function(c), errors, 'rev_func')
     DATA['today'] = safe(lambda: today_live(c), errors, 'today')
     DATA['n601'] = safe(lambda: n601(c), errors, 'n601')
-    DATA['n601_events'] = N601_EVENTS
+    # 2026-11-06:活动条目改为库里的排期(NewEraActivityPeriodV1),手写的只保留投放 / 版本 / 道具
+    _db_acts = safe(lambda: n601_activity_events(c), errors, 'n601_activity_events') or []
+    DATA['n601_events'] = [e for e in N601_EVENTS if not (_db_acts and e['kind'] == '活动')] + _db_acts
+    DATA['n601_new'] = safe(lambda: n601_newtables(c), errors, 'n601_new')
     DATA['n601_ev'] = {str(w_): safe(lambda w_=w_: n601_client(c, DATA['n601'], w_), errors, f'n601_ev_{w_}') for w_ in N6_EV_WINDOWS}
     DATA['n601_seg'] = safe(lambda: n601_by_segment(c, errors), errors, 'n601_seg')
     if DATA['n601'] and DATA['n601'].get('exclusions_error'):
