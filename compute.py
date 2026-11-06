@@ -2158,6 +2158,10 @@ def n601_client(c, N, w=None, seg=None):
         return None
     U = E_[E_.user_id.isin(ids)]
     ev = lambda name: E_[E_.event_name == name]
+    # 2026-11-06(用户确认):启动漏斗、启动耗时、安装来源只算「有内测玩家登录成功过的版本」。
+    # 0044~0051 等测试包上有大批安装(多数无机型、无网络、几乎从不登录,疑似自动化测试设备),混入会把漏斗和耗时严重拉偏
+    REL_VERS = set(E_[(E_.event_name == 'invader_login_ready') & E_.user_id.isin(ids)].client_version.dropna())
+    ev_rel = lambda name: E_[(E_.event_name == name) & E_.client_version.isin(REL_VERS)]
     # 获客来源(2026-11-04,用户确认):B72 起 session_start 首次启动带 install_referrer(Google Play 安装来源原文)。
     # 按安装取最早一条,原文只在这里归成类别,不进页面;安装后登录过的内测玩家算「成为 601 角色」。只覆盖同意采集的玩家,是下限。
     acq = None
@@ -2169,7 +2173,7 @@ def n601_client(c, N, w=None, seg=None):
             if 'organic' in x or 'google-play' in x: return '自然量'
             if 'not%20set' in x or 'not set' in x: return '未设置'
             return '其他'
-        SS_ = E_[E_.event_name == 'invader_session_start']
+        SS_ = E_[(E_.event_name == 'invader_session_start') & E_.client_version.isin(REL_VERS)]
         R_ = SS_[SS_.install_referrer.notna() & (SS_.install_referrer.astype(str) != '')].sort_values('t').drop_duplicates('install_md5')
         if len(R_):
             R_ = R_.assign(src=R_.install_referrer.map(ref_src))
@@ -2189,7 +2193,7 @@ def n601_client(c, N, w=None, seg=None):
     cov = [{'d': d_.strftime('%Y-%m-%d'), 'ev_users': int(U[U.d == d_].user_id.nunique()), 'act': act.get(d_.strftime('%Y-%m-%d')),
             'installs': int(E_[E_.d == d_].install_md5.nunique())} for d_ in days]
     # 启动漏斗(按安装):各阶段完成 → 登录成功;失败阶段和错误
-    st = ev('invader_startup_stage_completed'); ready = ev('invader_login_ready'); fail = ev('invader_startup_failed')
+    st = ev_rel('invader_startup_stage_completed'); ready = ev_rel('invader_login_ready'); fail = ev_rel('invader_startup_failed')
     def sfun(x_st, x_ready, x_fail):
         o = {k: int(x_st[x_st.stage == k].install_md5.nunique()) for k, _ in N6_STAGES}
         o['ready'] = int(x_ready.install_md5.nunique()); o['failed'] = int(x_fail.install_md5.nunique())
@@ -2403,8 +2407,17 @@ def n601_client(c, N, w=None, seg=None):
                  '其他': int(E_[(E_.d == d_) & ~E_.client_version.isin(vtop)].install_md5.nunique())} for d_ in days]}
     ssd = ev('invader_session_summary'); ssd = ssd[ssd.user_id.isin(ids)]
     end_daily = [{'d': d_.strftime('%Y-%m-%d'), **{str(k): int(((ssd.d == d_) & (ssd.end_reason == k)).sum()) for k in ssd.end_reason.dropna().unique()}} for d_ in days]
-    stg = ev('invader_startup_stage_completed')
-    stage_daily = [{'d': d_.strftime('%Y-%m-%d'), **{nm: q(stg[(stg.d == d_) & (stg.stage == k)].duration_ms / 1000, .5) for k, nm in N6_STAGES}} for d_ in days]
+    stg = ev_rel('invader_startup_stage_completed')
+    # 2026-11-06(用户确认):启动耗时只看每个安装第一次完成该阶段(新玩家第一次打开要等多久);重复打开更快,混在一起会拉低。
+    # 每日折线按首次打开;另出一张按机型档位、网络拆分的表(中位、90% 分位、超过 10 秒的安装数)
+    stg1 = stg.sort_values('t').drop_duplicates(['install_md5', 'stage']).copy()
+    stg1['sec'] = stg1.duration_ms / 1000
+    stage_daily = [{'d': d_.strftime('%Y-%m-%d'), **{nm: q(stg1[(stg1.d == d_) & (stg1.stage == k)].sec, .5) for k, nm in N6_STAGES}} for d_ in days]
+    def stage_row(name, x_):
+        return {'name': name, **{k: {'n': int((x_.stage == k).sum()), 'p50': q(x_[x_.stage == k].sec, .5), 'p90': q(x_[x_.stage == k].sec, .9),
+                                     'gt10': int((x_[x_.stage == k].sec > 10).sum())} for k, _ in N6_STAGES}}
+    stage_first = [stage_row('全部', stg1)] + [stage_row(nm, stg1[stg1.device_tier == k]) for k, nm in (('high', '高档机'), ('medium', '中档机'), ('low', '低档机'))] \
+        + [stage_row(nm, stg1[stg1.network_type == k]) for k, nm in (('local_area', 'Wi-Fi / 局域网'), ('carrier_data', '移动数据'))]
     # 首日 Lv3(2026-11-05,用户需求 5.3B):B72 起建筑升级完成(E034)带 target_level 和时间;主城 = building_type 5。
     # 只看 11-04 及以后注册、且注册当天就有埋点的内测玩家(可观测),算注册后多久第一次升到主城 Lv3
     lv3 = None
@@ -2450,7 +2463,7 @@ def n601_client(c, N, w=None, seg=None):
     return {'palace_hist': palace, 'coverage': cov, 'startup': startup, 'versions': vers, 'sessions': sess, 'first_day': fd, 'loads': loads, 'fps': fps, 'loads_daily': loads_daily, 'fps_daily': fps_daily,
             'reqfail': reqfail, 'exceptions': [[str(k_), int(v)] for k_, v in exc.component.value_counts().items()], 'interrupted': int(len(bi)),
             'build': build, 'shop': shop, 'pay_chain': pay_chain, 'chain': chain, 'diamonds': dia, 'games': games, 'dq': dq, 'acq': acq,
-            'ret_dual': dual, 'steps': steps, 'lv3': lv3, 'os': osv, 'first7_daily': f7d, 'ver_daily': ver_daily, 'end_daily': end_daily, 'stage_daily': stage_daily}
+            'ret_dual': dual, 'steps': steps, 'lv3': lv3, 'os': osv, 'first7_daily': f7d, 'ver_daily': ver_daily, 'end_daily': end_daily, 'stage_daily': stage_daily, 'stage_first': stage_first}
 
 
 # ---------------------------------------------------------------- 601 新表(2026-11-06,用户确认:战斗逐场、建筑升级逐次、钻石去向、新活动)
