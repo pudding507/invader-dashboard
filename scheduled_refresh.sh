@@ -72,6 +72,8 @@ m = re.search(r'<script id="dash-data" type="application/json">(.*?)</script>', 
 json.loads(m.group(1).replace('<\\/', '</'), parse_constant=lambda c: (_ for _ in ()).throw(ValueError(c)))
 print('页面数据 JSON 检查通过')
 PY
+# 2026-11-06 每日读数:从页面数据生成内部 md(invader/06_每日读数/),失败只记日志,不影响发布
+python3 daily_readout.py >> "$LOG" 2>&1 || log "每日读数生成失败(不影响发布)"
 log "上传到 Cloudflare Pages"
 rm -rf tools/node_modules/.cache/wrangler   # 2026-10-23:wrangler 会缓存上次用过的 Account ID 并优先用它;切换个人 / 公司账号时会发错地方,所以每次发布前清掉,只认 ~/.invader_env 里的配置
 (cd tools && npx wrangler pages deploy ../site --project-name="$CF_PAGES_PROJECT" --branch=main --commit-dirty=true) >> "$LOG" 2>&1 \
