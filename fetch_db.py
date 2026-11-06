@@ -90,7 +90,7 @@ def connect(kind, user, pwd):
     if kind == 'log':
         import pymysql
         return pymysql.connect(host=HOST, port=LOG_PORT, user=user, password=pwd, database='invaderLogData',
-                               connect_timeout=15, read_timeout=1800, charset='utf8mb4')
+                               connect_timeout=15, read_timeout=900, charset='utf8mb4')   # 2026-11-06 由 30 分钟改为 15 分钟:VPN 中途断开时本地会一直等死连接(最慢的卡约 8 分钟)
     import pymssql   # SQL Server 2005:必须 tds_version 7.0
     return pymssql.connect(server=HOST, port=PROD_PORT, user=user, password=pwd, database='master',
                            login_timeout=15, timeout=180, tds_version='7.0')   # 老 SQL Server:单条查询超时 3 分钟就放弃,不重试
