@@ -226,6 +226,8 @@ const D = JSON.parse(document.getElementById('dash-data').textContent);
 const DEFS = __DEFS__;
 const COMMON = '__COMMON__';
 const BANDS = D.meta.bands, WINS = D.meta.windows, END = D.meta.data_through;
+const END6 = (D.n601 && D.n601.end) || END;   // 2026-11-10:601 各页用 601 自己的截至日(老服数据没更新时两者可能不同)
+const RUN6 = D.meta.n601_run_at || D.meta.run_at;
 // 选了服务器时,活跃 / 等级 / 收入 / 新用户 / PvP / 联盟 都取该服的视图(同一账号可能在多个服)
 const X = (name) => (S.server !== 'all' && D.srv && D.srv[S.server]) ? D.srv[S.server][name] : D[name];
 const S = {tab:'n601', w6:1, seg6:'all', w:30, plat:'all', band:'all', server:'all', dauMode:'dau', revMode:'revenue', lvlMetric:'users', cohDen:'reg'};
@@ -315,21 +317,35 @@ const rangeDays = () => 30;   // 2026-11-05 老服去掉时间筛选,趋势统�
 // 2026-11-04 601 版本 / 投放 / 活动日历(D.n601_events):趋势图按天标出。活动 = 浅金色底,单日事件(发版、开投)= 虚线
 function evPlugin(dates){
   const wins = [];
-  (D.n601_events || []).filter(e => e.start).forEach(e => (e.windows || [[e.start, e.end]]).forEach((w, k) =>
-    wins.push({name:e.name, kind:e.kind, a:w[0].slice(0,10), b:(w[1] || w[0]).slice(0,10), point:!w[1], first:k === 0})));
-  return {id:'evb', beforeDatasetsDraw(ch){
-    if (!dates || !dates.length) return;
-    const xs = ch.scales.x, a = ch.chartArea, g = ch.ctx, step = dates.length > 1 ? xs.getPixelForValue(1) - xs.getPixelForValue(0) : 20;
-    let row = 0; g.save(); g.font = '10px ' + css('--font-ui');
-    wins.forEach(w => {
-      const i0 = dates.findIndex(d => d >= w.a); let j1 = -1; dates.forEach((d, i) => { if (d <= w.b) j1 = i; });
-      if (i0 < 0 || j1 < i0) return;
-      const x0 = xs.getPixelForValue(i0) - step / 2, x1 = xs.getPixelForValue(j1) + step / 2;
-      if (w.point) { g.strokeStyle = css('--muted'); g.setLineDash([3,3]); g.beginPath(); g.moveTo(x0, a.top); g.lineTo(x0, a.bottom); g.stroke(); g.setLineDash([]); }
-      else { g.fillStyle = 'rgba(201,150,40,0.12)'; g.fillRect(x0, a.top, x1 - x0, a.bottom - a.top); }
-      if (w.first) { g.fillStyle = css('--muted'); const tw_ = g.measureText(w.name).width, tx = x0 + 3 + tw_ > a.right ? x0 - tw_ - 3 : x0 + 3; g.fillText(w.name, tx, a.top + 10 + (row++ % 3) * 11); }   // 靠右边的标签往左写,避免被截断
-    });
-    g.restore(); }};
+  (D.n601_events || []).forEach((e, n) => e.start && (e.windows || [[e.start, e.end]]).forEach((w, k) =>
+    wins.push({name:e.name, no:n + 1, kind:e.kind, a:w[0].slice(0,10), b:(w[1] || w[0]).slice(0,10), point:!w[1], first:k === 0})));
+  const span = (ch, w) => {   // 这段活动在横轴上的像素范围;不在图里返回 null
+    const xs = ch.scales.x, step = dates.length > 1 ? xs.getPixelForValue(1) - xs.getPixelForValue(0) : 20;
+    const i0 = dates.findIndex(d => d >= w.a); let j1 = -1; dates.forEach((d, i) => { if (d <= w.b) j1 = i; });
+    return i0 < 0 || j1 < i0 ? null : [xs.getPixelForValue(i0) - step / 2, xs.getPixelForValue(j1) + step / 2];
+  };
+  return {id:'evb',
+    beforeDatasetsDraw(ch){   // 底色和虚线画在数据下面
+      if (!dates || !dates.length) return;
+      const a = ch.chartArea, g = ch.ctx; g.save();
+      wins.forEach(w => { const sp = span(ch, w); if (!sp) return;
+        if (w.point) { g.strokeStyle = css('--muted'); g.setLineDash([3,3]); g.beginPath(); g.moveTo(sp[0], a.top); g.lineTo(sp[0], a.bottom); g.stroke(); g.setLineDash([]); }
+        else { g.fillStyle = 'rgba(201,150,40,0.12)'; g.fillRect(sp[0], a.top, sp[1] - sp[0], a.bottom - a.top); } });
+      g.restore(); },
+    afterDatasetsDraw(ch){   // 2026-11-10 名字画在数据上面并防重叠:放进第一个横向不冲突的行(最多 3 行);放不下只写编号(对应「版本、投放与活动」表);再放不下不写
+      if (!dates || !dates.length) return;
+      const a = ch.chartArea, g = ch.ctx, rows = [[], [], []], fits = (r, x0_, x1_) => rows[r].every(([p, q]) => x1_ + 4 < p || x0_ > q + 4);
+      const bg = getComputedStyle(document.body).backgroundColor || '#fff';
+      g.save(); g.font = '10px ' + css('--font-ui');
+      wins.forEach(w => { if (!w.first) return; const sp = span(ch, w); if (!sp) return;
+        for (const txt of [w.name, '#' + w.no]) {
+          const tw_ = g.measureText(txt).width, tx = sp[0] + 3 + tw_ > a.right ? sp[0] - tw_ - 3 : sp[0] + 3;   // 靠右边的标签往左写,避免被截断
+          const r = [0, 1, 2].find(r_ => fits(r_, tx, tx + tw_)); if (r === undefined) continue;
+          rows[r].push([tx, tx + tw_]); const ty = a.top + 10 + r * 12;
+          g.globalAlpha = 0.9; g.fillStyle = bg; g.fillRect(tx - 2, ty - 9, tw_ + 4, 12); g.globalAlpha = 1;
+          g.fillStyle = css('--muted'); g.fillText(txt, tx, ty); break;
+        } });
+      g.restore(); }};
 }
 function mkChart(id, cfg){
   const el = $(id); if (!el) return;
@@ -644,7 +660,7 @@ function n601Page(part){
   const Q = N.cohort_q;
   const pn = v => String(Math.round(v * 1000) / 10), rg = (lo, hi) => hi != null ? `${pn(lo)}–${pn(hi)}%` : `${pn(lo)}%`;
   const lineTxt = Q ? Q.lines.map(l => `${l.name} D1 ${rg(l.d1, l.d1_hi)}${l.d7 != null ? ' / D7 ' + rg(l.d7, l.d7_hi) : ''}${l.d30 != null ? ' / D30 ' + rg(l.d30) : ''}`).join(';') : '';
-  const r3 = md(addDays(END,-2));
+  const r3 = md(addDays(END6,-2));
   // 2026-11-05 时间筛选只影响关键数字卡;明细、渠道、商品、点击付费漏斗等表固定内测以来(近 1 天常常没有订单,表会是空的)
   const WA = (N.win || {})['0'] || WN;
   const dl = N.daily, dsum = (key) => sum(dl.map(r => r[key]));
@@ -695,8 +711,8 @@ function n601Page(part){
     <div class="tw"><table><thead><tr><th>老服大 R</th><th>人数</th><th>已进入 601</th><th>比例</th></tr></thead><tbody>
      <tr><td class="l">近 90 天付费 ≥ $1,000(大 R 风险表那批)</td><td>${W.w90}</td><td>${W.w90_in}</td><td>${fp(W.w90_in / W.w90,0)}</td></tr>
      <tr><td class="l">历史累计 ≥ $1,000,且近 30 天在老服登录过</td><td>${W.wlife}</td><td>${W.wlife_in}</td><td>${fp(W.wlife_in / W.wlife,0)}</td></tr></tbody></table></div></div>` : ''}
-   ${M ? `<div class="card"><h3>老服账号近 3 日活跃分布</h3><div class="sub">${M.n} 人;${r3} ~ ${md(END)} 在老服 / 601 的活跃情况</div>
-    <div class="tw"><table><thead><tr><th>${r3} ~ ${md(END)}</th><th>人数</th></tr></thead><tbody>
+   ${M ? `<div class="card"><h3>老服账号近 3 日活跃分布</h3><div class="sub">${M.n} 人;${r3} ~ ${md(END6)} 在老服 / 601 的活跃情况</div>
+    <div class="tw"><table><thead><tr><th>${r3} ~ ${md(END6)}</th><th>人数</th></tr></thead><tbody>
      <tr><td>仅老服活跃</td><td>${M.recent.only_old}</td></tr><tr><td>两端均活跃</td><td>${M.recent.both}</td></tr>
      <tr><td>仅 601 活跃</td><td>${M.recent.only_601}</td></tr><tr><td>两端均未活跃</td><td>${M.recent.neither}</td></tr></tbody></table></div></div>` : ''}
   </div>
@@ -803,8 +819,8 @@ function n601Page(part){
   // 版本 / 投放 / 活动日历(2026-11-04):读趋势时当切点;趋势图上同样标出
   const thru = D.meta.data_through || '';
   const evState = (e) => !e.start ? '时间未定' : (e.end ? (thru >= e.end.slice(0,10) ? '已结束' : thru >= e.start.slice(0,10) ? '进行中' : '未开始') : (thru >= e.start.slice(0,10) ? '已发生' : '未到'));
-  const sCal = (D.n601_events || []).length ? `<h2>版本、投放与活动</h2><div class="card"><div class="sub">时间是中国 / 新加坡时间;状态按数据截至日 ${esc(thru)} 判断。活动开始后以数据为准核对是否真的开了。趋势图上:活动 = 浅金色底,发版和投放变化 = 虚线</div>
-   <div class="tw"><table><thead><tr><th>类型</th><th>名称</th><th>时间</th><th>状态</th><th>说明</th></tr></thead><tbody>${D.n601_events.map(e => `<tr><td>${esc(e.kind)}</td><td class="l">${esc(e.name)}</td><td class="l">${e.start ? esc(e.start) + (e.end ? ' ~ ' + esc(e.end) : '') : '—'}</td><td>${evState(e)}</td><td class="l note">${esc(e.note || '')}</td></tr>`).join('')}</tbody></table></div></div>` : '';
+  const sCal = (D.n601_events || []).length ? `<h2>版本、投放与活动</h2><div class="card"><div class="sub">时间是中国 / 新加坡时间;状态按数据截至日 ${esc(thru)} 判断。活动开始后以数据为准核对是否真的开了。趋势图上:活动 = 浅金色底,发版和投放变化 = 虚线;挤在一起放不下名字时只标编号</div>
+   <div class="tw"><table><thead><tr><th>编号</th><th>类型</th><th>名称</th><th>时间</th><th>状态</th><th>说明</th></tr></thead><tbody>${D.n601_events.map((e, n) => `<tr><td>#${n + 1}</td><td>${esc(e.kind)}</td><td class="l">${esc(e.name)}</td><td class="l">${e.start ? esc(e.start) + (e.end ? ' ~ ' + esc(e.end) : '') : '—'}</td><td>${evState(e)}</td><td class="l note">${esc(e.note || '')}</td></tr>`).join('')}</tbody></table></div></div>` : '';
   // 逐日趋势(2026-11-05,老板要求):核心指标每天一张小图,共用日期轴,从内测开始,不随时间筛选;版本和活动标在图上
   const VT = V;
   // 2026-11-05 图内维度按钮(用户:图内可切国家等维度);选了顶部平台 / 国家 / 版本筛选时不显示(数据只算了全部玩家)
@@ -1441,14 +1457,15 @@ function draw(){
   charts.splice(0).forEach(c => c.destroy());
   segs();
   $('stamp').textContent = `数据截至 ${END}(中国时间) · 更新于 ${(D.meta.run_at||'').replace('T',' ').slice(0,16)}${S.server !== 'all' ? ' · 当前:' + S.server + ' 服' : ''}`;
-  const today = new Date(); const lag = Math.floor((Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) - Date.parse(END + 'T00:00:00Z')) / 864e5);
-  const stale = lag > 2 ? `<div class="banner" style="margin-top:12px">数据已过期:截至 ${END},已经 ${lag} 天没有更新。页面上的数字和告警都停在那一天,请先刷新数据再做判断。</div>` : '';
+  const today = new Date(); const endX = N6.includes(S.tab) ? END6 : END;
+  const lag = Math.floor((Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) - Date.parse(endX + 'T00:00:00Z')) / 864e5);
+  const stale = lag > 2 ? `<div class="banner" style="margin-top:12px">数据已过期:截至 ${endX},已经 ${lag} 天没有更新。页面上的数字和告警都停在那一天,请先刷新数据再做判断。</div>` : '';
   $('f-bar').classList.toggle('hidden', !OLD.includes(S.tab));   // 筛选只用于老服各页
   $('f-bar6').classList.toggle('hidden', !N6.includes(S.tab) || S.tab === 'n6dq' || S.tab === 'n6people');   // 2026-11-06 逐人旅程用表内筛选   // 2026-11-05 技术与数据页不随筛选,不显示筛选条
   const W6 = D.n601 && D.n601.win ? D.n601.win[S.w6] : null;
   const SC6 = (D.n601_seg || {}).counts || {};
-  $('f-w6note').textContent = W6 ? `${W6.from.slice(5)} ~ ${END.slice(5)}${S.w6 === 1 ? '(数据截至日全天)' : '(内测以来)'};时间筛选只影响关键数字卡;趋势图、埋点块、标「不随时间筛选」的卡片都是全部内测期间或当前状态。平台 / 国家 / 版本一次选一项;国家按账号注册 IP 判断(挂 VPN 会判错),版本是最后一次登录的版本,不足 10 人的不单列;无法判断:平台 ${(SC6.plat||{})['未知'] ?? 0} 人、国家 ${(SC6.country||{})['未知'] ?? 0} 人、版本 ${(SC6.ver||{})['未知'] ?? 0} 人` : '';
-  if (N6.includes(S.tab)) $('stamp').textContent = `601 数据截至 ${END} · 中国时间 · 更新于 ${(D.meta.run_at||'').replace('T',' ').slice(0,16)}`;
+  $('f-w6note').textContent = W6 ? `${W6.from.slice(5)} ~ ${END6.slice(5)}${S.w6 === 1 ? '(数据截至日全天)' : '(内测以来)'};时间筛选只影响关键数字卡;趋势图、埋点块、标「不随时间筛选」的卡片都是全部内测期间或当前状态。平台 / 国家 / 版本一次选一项;国家按账号注册 IP 判断(挂 VPN 会判错),版本是最后一次登录的版本,不足 10 人的不单列;无法判断:平台 ${(SC6.plat||{})['未知'] ?? 0} 人、国家 ${(SC6.country||{})['未知'] ?? 0} 人、版本 ${(SC6.ver||{})['未知'] ?? 0} 人` : '';
+  if (N6.includes(S.tab)) $('stamp').textContent = `601 数据截至 ${END6} · 中国时间 · 更新于 ${(RUN6||'').replace('T',' ').slice(0,16)}`;
   ({home, newuser, life, game, pvp:pvpPage, ally:allyPage, money, geo:geoPage, alerts, defs,
     n601:() => n601Page('n601'), n6tech:() => n601Page('n6tech'), n6first:() => n601Page('n6first'), n6new:() => n601Page('n6new'), n6grow:() => n601Page('n6grow'), n6pay:() => n601Page('n6pay'), n6dq:() => n601Page('n6dq'), n6people:peoplePage})[S.tab]();
   oldExtra(S.tab);

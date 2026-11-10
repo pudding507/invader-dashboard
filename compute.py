@@ -1998,6 +1998,8 @@ def n601(c, only=None):
            'usd': r(Ok.price.sum(), 2), 'paid_usd': r(Ok.paid_usd.sum(), 2), 'pending_usd': r(Ok.price.sum() - Ok.paid_usd.sum(), 2),
            'paid_orders': int((Ok.status.isin(N6_COUNTED)).sum()), 'payers': int(Ok.monetId.nunique()), 'orders': int(len(Ok)),
            'pay_rate': r(Ok.monetId.nunique() / len(P)) if len(P) else None}
+    if only is None:   # 2026-11-10 留给内部分析脚本用的中间表(不进页面数据)
+        c.n601_frames = {'P': P, 'Act': Act, 'Ok': Ok}
     # 时间筛选(2026-11-03):新增、活跃、付费、渠道、商品、点击付费漏斗按窗口重算;留存、当前等级、来源等不随窗口变
     win = {}
     for w_ in N6_WINDOWS:

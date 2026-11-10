@@ -38,34 +38,106 @@ HERE = Path(__file__).resolve().parent
 HOST = os.environ.get('INVADER_DB_HOST', '192.168.50.14')
 LOG_PORT, PROD_PORT = 39995, 39998
 # 2026-11-05 老服登录卡增量抓取(用户确认):Login_user day 每次重抓近 150 天要约 8 分钟。改成本地缓存历史,
-# 平时只重抓最近 4 天(覆盖 Log 库晚到的记录),拼回去;每周一、缓存缺失或过旧、或设 INVADER_FULL_LOGIN=1 时完整重抓。
-# 校验:重抓窗口的第一天在缓存里也有,两边行数、登录记录数相差超过 0.5% 就放弃增量、当场完整重抓。缓存在 data/cache/(不进仓库)。
-LOGIN_CARD, LOGIN_RECENT_DAYS = 'Login_user day', 4
-LOGIN_CACHE = HERE / 'data' / 'cache' / 'login_user_day.json'
+# 平时只重抓最近 4 天(覆盖 Log 库晚到的记录),拼回去;每周一、缓存缺失或过旧、或设 INVADER_FULL_INC=1 时完整重抓。
+# 校验:重抓窗口的第一天在缓存里也有,两边行数、度量合计相差超过 0.5% 就放弃增量、当场完整重抓。缓存在 data/cache/(不进仓库)。
+# 2026-11-10:VPN 断了几天时缓存会停在更早的日子。重抓起点取「近 4 天」和「缓存截至日」里更早的那个,保证和缓存重叠一天能校验;
+# 缓存截至日在 10 天以内都走增量。同日(用户确认)把同一套做法推广到另外 4 张按天的慢卡,和按账号汇总的钻石去向卡:
+#   window = 卡里 SQL 的「近 N 天」;measure = 校验用的数值列;daily = 卡本身按账号汇总、没有日期列的,
+#   抓取时改成按天抓(SQL 里补上 dateCN),缓存按天存,输出前再按原卡的分组汇总回去,渲染层看到的结构不变。
+INC_RECENT_DAYS, INC_MAX_DAYS = 4, 10
+INC_CARDS = {
+    'Login_user day': {'window': 150, 'measure': 'login_records', 'cache': 'login_user_day.json'},
+    'Gameplay_participation day': {'window': 60, 'measure': 'n', 'cache': 'gameplay_participation_day.json'},
+    'PvP_battle day': {'window': 60, 'measure': 'n', 'cache': 'pvp_battle_day.json'},
+    'Diamond_flow daily': {'window': 90, 'measure': 'diamonds', 'cache': 'diamond_flow_daily.json'},
+    'Resource_ledger daily': {'window': 28, 'measure': 'amount', 'cache': 'resource_ledger_daily.json'},
+    # 无日期索引的表:按主键取最后 K 行再按日期筛。增量时把 K 按天数等比缩小(至少按 8 天算,留余量);缩得不够时第一天对不上,会自动完整重抓
+    'Gameplay_participation day (no index)': {'window': 60, 'measure': 'n', 'cache': 'gameplay_participation_noindex.json', 'tid_scale': True},
+    'Diamond_spend by account': {'window': 90, 'measure': 'diamonds', 'cache': 'diamond_spend_by_account.json',
+                                 'daily': [('GROUP BY monetId, typeEnum', 'GROUP BY monetId, typeEnum, dateCN'),
+                                           ('AS diamonds\n', 'AS diamonds, dateCN\n')],
+                                 'group': ('monetId', 'direction', 'diamond_type')},
+}
 
-def login_incremental_ok():
-    """能不能走增量:不是周一、没要求完整、缓存存在且截至日不早于 今天 - 5 天。返回 (可以, 缓存, 原因)。"""
-    if os.environ.get('INVADER_FULL_LOGIN') == '1': return False, None, '要求完整重抓'
+# 2026-11-10(用户确认):User_country 每次按主键倒序读最后 30 万行要 1~3 分钟。改成本地缓存「每个账号最近一条有国家的记录(主键, 国家)」,
+# 平时只读上次最大主键之后的新行;输出时只保留主键落在「当前最大主键 - 30 万」之后的账号,和原来「最后 30 万行」的口径一致
+# (主键有空洞时会略有差别)。缓存缺失或设 INVADER_FULL_INC=1 时按原方式重读 30 万行重建。
+UC_CARD, UC_WINDOW = 'User_country', 300000
+UC_CACHE = HERE / 'data' / 'cache' / 'user_country.json'
+
+def user_country_rows(cur):
+    c = json.loads(UC_CACHE.read_text()) if UC_CACHE.exists() and os.environ.get('INVADER_FULL_INC') != '1' else None
+    if c:
+        cur.execute(f"SELECT tid, monetId, country FROM getUserCountry WHERE tid > {int(c['max_tid'])} ORDER BY tid")
+        new = cur.fetchall(); acc = {int(k): v for k, v in c['acc'].items()}; mx = int(c['max_tid']); mode = f'增量,新读 {len(new)} 行'
+    else:
+        cur.execute(f"SELECT tid, monetId, country FROM getUserCountry ORDER BY tid DESC LIMIT {UC_WINDOW}")
+        new = sorted(cur.fetchall()); acc = {}; mx = 0; mode = f'完整,读 {len(new)} 行'
+    for tid, mid, cty in new:
+        mx = max(mx, int(tid))
+        if cty: acc[int(mid)] = [int(tid), cty]
+    lo = mx - UC_WINDOW
+    acc = {k: v for k, v in acc.items() if v[0] > lo}
+    UC_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    UC_CACHE.write_text(json.dumps({'max_tid': mx, 'saved_at': datetime.now().isoformat(timespec='seconds'), 'acc': acc}))
+    print(f'  {UC_CARD}:{mode},保留 {len(acc)} 个账号', flush=True)
+    return [{'monetId': k, 'country': v[1]} for k, v in acc.items()]
+
+def inc_cache_path(card):
+    return HERE / 'data' / 'cache' / INC_CARDS[card]['cache']
+
+def inc_window_days(cache):
+    return max(INC_RECENT_DAYS, (date.today() - date.fromisoformat(cache['through'])).days)
+
+def inc_ok(card):
+    """能不能走增量:不是周一、没要求完整、缓存存在且截至日在 10 天以内。返回 (可以, 缓存, 原因)。"""
+    if os.environ.get('INVADER_FULL_INC') == '1' or os.environ.get('INVADER_FULL_LOGIN') == '1': return False, None, '要求完整重抓'
     if date.today().weekday() == 0: return False, None, '周一完整重抓'
-    if not LOGIN_CACHE.exists(): return False, None, '没有缓存'
-    c = json.loads(LOGIN_CACHE.read_text())
-    if not c.get('through') or c['through'] < (date.today() - timedelta(days=LOGIN_RECENT_DAYS + 1)).isoformat():
+    f_ = inc_cache_path(card)
+    if not f_.exists(): return False, None, '没有缓存'
+    c = json.loads(f_.read_text())
+    if not c.get('through') or c['through'] < (date.today() - timedelta(days=INC_MAX_DAYS)).isoformat():
         return False, None, f"缓存截至 {c.get('through')},太旧"
     return True, c, ''
 
-def login_merge(cache, recent):
+def inc_sql(card, sql, days):
+    """把卡里的「近 N 天」换成近 days 天;daily 卡同时改成按天分组。"""
+    cfg = INC_CARDS[card]; old = f"CURDATE() - INTERVAL {cfg['window']} DAY"
+    assert old in sql, f'{card} 的 SQL 里找不到 {old}'
+    s_ = sql.replace(old, f'CURDATE() - INTERVAL {days} DAY')
+    if cfg.get('tid_scale') and days < cfg['window']:
+        import math, re as re_
+        s_ = re_.sub(r'MAX\(tid\) - (\d+)', lambda m_: f"MAX(tid) - {math.ceil(int(m_.group(1)) * max(days, 8) / cfg['window'])}", s_)
+    for a_, b_ in cfg.get('daily', []):
+        assert a_ in s_, f'{card} 的 SQL 里找不到 {a_!r}'
+        s_ = s_.replace(a_, b_)
+    return s_
+
+def inc_merge(card, cache, recent):
     """缓存里重抓窗口之前的行 + 重抓的行;校验重抓窗口第一天两边一致。返回 (合并行, 问题)。"""
-    day0 = (date.today() - timedelta(days=LOGIN_RECENT_DAYS)).isoformat(); lo = (date.today() - timedelta(days=150)).isoformat()
+    cfg = INC_CARDS[card]; ms = cfg['measure']
+    day0 = (date.today() - timedelta(days=inc_window_days(cache))).isoformat(); lo = (date.today() - timedelta(days=cfg['window'])).isoformat()
     old0 = [r for r in cache['rows'] if str(r['dateCN'])[:10] == day0]; new0 = [r for r in recent if str(r['dateCN'])[:10] == day0]
-    a, b = (len(old0), sum(int(r['login_records']) for r in old0)), (len(new0), sum(int(r['login_records']) for r in new0))
-    if not a[0] or abs(a[0] - b[0]) > 0.005 * a[0] or abs(a[1] - b[1]) > 0.005 * max(a[1], 1):
-        return None, f'{day0} 缓存 {a[0]} 行 / {a[1]} 条,重抓 {b[0]} 行 / {b[1]} 条,不一致'
+    a, b = (len(old0), sum(float(r[ms] or 0) for r in old0)), (len(new0), sum(float(r[ms] or 0) for r in new0))
+    if not a[0] or abs(a[0] - b[0]) > 0.005 * a[0] or abs(a[1] - b[1]) > 0.005 * max(abs(a[1]), 1):
+        return None, f'{day0} 缓存 {a[0]} 行 / 合计 {a[1]:,.0f},重抓 {b[0]} 行 / 合计 {b[1]:,.0f},不一致'
     keep = [r for r in cache['rows'] if lo <= str(r['dateCN'])[:10] < day0]
     return keep + recent, ''
 
-def login_save_cache(rows, through, mode):
-    LOGIN_CACHE.parent.mkdir(parents=True, exist_ok=True)
-    LOGIN_CACHE.write_text(json.dumps({'through': through, 'saved_at': datetime.now().isoformat(timespec='seconds'), 'mode': mode, 'rows': rows}, ensure_ascii=False))
+def inc_output(card, rows):
+    """daily 卡:按原卡的分组把按天的行汇总回去(数值列求和),其余卡原样输出。"""
+    cfg = INC_CARDS[card]
+    if 'daily' not in cfg: return rows
+    agg = {}
+    for r in rows:
+        k = tuple(r[g] for g in cfg['group'])
+        o = agg.setdefault(k, {g: r[g] for g in cfg['group']} | {cfg['measure']: 0.0})
+        o[cfg['measure']] += float(r[cfg['measure']] or 0)
+    return list(agg.values())
+
+def inc_save_cache(card, rows, through, mode):
+    f_ = inc_cache_path(card); f_.parent.mkdir(parents=True, exist_ok=True)
+    f_.write_text(json.dumps({'through': through, 'saved_at': datetime.now().isoformat(timespec='seconds'), 'mode': mode, 'rows': rows}, ensure_ascii=False))
 
 LIGHT_FROM_SQL = ['Revenue_today', 'N601_players detail', 'N601_activity tasks day', 'N601_checkout', 'N601_order status']   # 轻量刷新时重跑的现有小卡;2026-11-05 加到账状态(几十行,几秒),今天的 601 订单要用它剔测试卡
 
@@ -90,7 +162,7 @@ def connect(kind, user, pwd):
     if kind == 'log':
         import pymysql
         return pymysql.connect(host=HOST, port=LOG_PORT, user=user, password=pwd, database='invaderLogData',
-                               connect_timeout=15, read_timeout=900, charset='utf8mb4')   # 2026-11-06 由 30 分钟改为 15 分钟:VPN 中途断开时本地会一直等死连接(最慢的卡约 8 分钟)
+                               connect_timeout=15, read_timeout=720, charset='utf8mb4')   # 2026-11-06 由 30 分钟改为 15 分钟;2026-11-10 改为 12 分钟(慢卡平时走增量只要十几秒;周一 / 缓存过期完整重抓时数据库忙会到 6~8 分钟,8 分钟太紧)
     import pymssql   # SQL Server 2005:必须 tds_version 7.0
     return pymssql.connect(server=HOST, port=PROD_PORT, user=user, password=pwd, database='master',
                            login_timeout=15, timeout=180, tds_version='7.0')   # 老 SQL Server:单条查询超时 3 分钟就放弃,不重试
@@ -205,34 +277,42 @@ def main():
         sql = f.read_text()
         first = sql.splitlines()[0]
         kind = 'log' if 'db: log' in first else 'rs' if 'db: rs' in first else 'prod'
-        login_inc = None
-        if f.stem == LOGIN_CARD and not a.light:
-            ok_, cache_, why_ = login_incremental_ok()
+        inc_cache, is_inc = None, f.stem in INC_CARDS and not a.light
+        full_sql = sql
+        if is_inc:
+            full_sql = inc_sql(f.stem, sql, INC_CARDS[f.stem]['window'])   # daily 卡完整抓取也按天抓
+            ok_, cache_, why_ = inc_ok(f.stem)
             if ok_:
-                inc_sql = sql.replace('dateCN >= CURDATE() - INTERVAL 150 DAY', f'dateCN >= CURDATE() - INTERVAL {LOGIN_RECENT_DAYS} DAY')
-                if inc_sql != sql: login_inc, sql = cache_, inc_sql
+                inc_cache, sql = cache_, inc_sql(f.stem, sql, inc_window_days(cache_))
             else:
-                print(f'  {LOGIN_CARD}:完整抓取({why_})', flush=True)
+                sql = full_sql
+                print(f'  {f.stem}:完整抓取({why_})', flush=True)
         # 2026-10-28:VPN 不稳时连接会被重置,每张卡失败后重新连接再试一次(只试一次,不反复打库)
         for attempt in (1, 2):
             t = time.time()
             try:
                 if kind not in conns: conns[kind] = connect(kind, user, pwd)
-                cur = conns[kind].cursor(); cur.execute(sql)
-                cols = [d[0] for d in cur.description]
-                rows = post_process(f.stem, [dict(zip(cols, map(jsonable, r))) for r in cur.fetchall()])
-                if f.stem == LOGIN_CARD and not a.light:
-                    if login_inc is not None:
-                        merged, prob = login_merge(login_inc, rows)
+                cur = conns[kind].cursor()
+                if f.stem == UC_CARD and not a.light:
+                    rows = user_country_rows(cur)
+                else:
+                    cur.execute(sql)
+                    cols = [d[0] for d in cur.description]
+                    rows = post_process(f.stem, [dict(zip(cols, map(jsonable, r))) for r in cur.fetchall()])
+                if is_inc:
+                    if inc_cache is not None:
+                        merged, prob = inc_merge(f.stem, inc_cache, rows)
                         if merged is None:   # 校验不过:当场完整重抓
-                            print(f'  {LOGIN_CARD}:增量校验不通过({prob}),改为完整抓取', flush=True)
-                            cur.execute(f.read_text()); rows = [dict(zip(cols, map(jsonable, r))) for r in cur.fetchall()]; mode_ = 'full'
+                            print(f'  {f.stem}:增量校验不通过({prob}),改为完整抓取', flush=True)
+                            cur.execute(full_sql); cols = [d[0] for d in cur.description]
+                            rows = [dict(zip(cols, map(jsonable, r))) for r in cur.fetchall()]; mode_ = 'full'
                         else:
-                            print(f'  {LOGIN_CARD}:增量,重抓近 {LOGIN_RECENT_DAYS} 天 {len(rows)} 行,拼接后 {len(merged)} 行', flush=True)
+                            print(f'  {f.stem}:增量,重抓近 {inc_window_days(inc_cache)} 天 {len(rows)} 行,拼接后 {len(merged)} 行', flush=True)
                             rows, mode_ = merged, 'incremental'
                     else:
                         mode_ = 'full'
-                    login_save_cache(rows, out['data_through'], mode_)
+                    inc_save_cache(f.stem, rows, out['data_through'], mode_)
+                    rows = inc_output(f.stem, rows)
                 out['metrics'][f.stem] = rows; out['errors'].pop(f.stem, None)
                 print(f'  OK  {f.stem}: {len(rows)} 行, {time.time()-t:.0f}s' + ('(重试成功)' if attempt == 2 else ''), flush=True)
                 break
