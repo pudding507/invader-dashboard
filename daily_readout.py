@@ -5,12 +5,13 @@
 只列事实:数字带分子分母和口径标签,样本小的标出来;不写原因判断和建议(那些由人看过再写)。同一天重跑会覆盖。
 口径规则见 ~/DataGripProjects/invader/05_知识库/看板数值标准.md。
 """
-import json, math, re, sys
+import json, math, os, re, sys
 from datetime import date, timedelta
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-OUT = Path.home() / 'DataGripProjects' / 'invader' / '06_每日读数'
+# 2026-11-11 输出目录可用环境变量 INVADER_READOUT_DIR 指定;默认写到文档目录 invader/06_每日读数,该目录所在的 invader/ 不存在(别的机器部署)就跳过
+OUT = Path(os.environ['INVADER_READOUT_DIR']) if os.environ.get('INVADER_READOUT_DIR') else Path.home() / 'DataGripProjects' / 'invader' / '06_每日读数'
 
 
 def load():
@@ -111,6 +112,8 @@ def main():
         L.append('## 七、当天在进行的版本 / 投放 / 活动\n')
         L += [f'- {e["kind"]}:{e["name"]}({e["start"]}{" ~ " + e["end"] if e.get("end") else ""})' for e in evs]
         L.append('')
+    if not os.environ.get('INVADER_READOUT_DIR') and not OUT.parent.exists():
+        print(f'没有文档目录 {OUT.parent},不生成每日读数'); return
     OUT.mkdir(parents=True, exist_ok=True)
     f = OUT / f'读数_{E}.md'; f.write_text('\n'.join(L), encoding='utf-8')
     print(f'每日读数写入 {f}')

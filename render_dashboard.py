@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Invader 看板 · 渲染:raw_metrics.json → site/index.html(完整网页,给 Cloudflare Pages)
-                                          + preview_artifact.html(去掉外壳,给 Claude 网页发布)
+                                          2026-11-11 起不再生成给 Claude 网页的 preview_artifact.html
 
 用法:
-  python3 render_dashboard.py --raw raw_metrics.json --out site/index.html --artifact preview_artifact.html
+  python3 render_dashboard.py --raw raw_metrics.json --out site/index.html
 
 计算全在 compute.py;这里只负责把 DATA 嵌进页面,页面里的筛选(时间 × 平台 × 等级段)在浏览器端切换。
 图表库 lib/chart.umd.min.js 内嵌(与 SoulMap 同一份 Chart.js 4.4.3),页面不依赖外网脚本。
@@ -668,7 +668,8 @@ function n601Page(part){
   const tw = TA ? TA.weeks.filter(w => w.from >= N.start) : [];
   const V = SEG && part !== 'n6dq' ? (SEG.ev || {})['0'] : (D.n601_ev || {})['0'];   // 2026-11-05 埋点块固定内测以来   // 数据质量页始终是全部玩家
   const sToday = SEG ? '' : todayCard('n601');   // 今天实时只有全部玩家
-  const sBanner = `<div class="banner">${segTxt ? `<b>${esc(segTxt)}</b>两个 App 合计、今天实时、埋点数据质量仍是全部玩家。<br>` : ''}601 是新版内测服,口径和其他页不同:<b>活跃</b>用每日任务、签到、付款、登录等痕迹代替(新版不写老版登录日志,会漏掉什么都没留下的人);<b>充值</b>:Google / Apple 订单按 New Era 支付表判断到账(商店确认扣款、奖励已发放;商店测试购买和退款已剔除),PayerMax 网页支付没有到账状态记录,按下单计入收入(渠道表和订单分层里单列)。只统计 ${esc(N.start)} 内测开始后注册的角色,已去掉测试号和系统 NPC 城(${fi(D.meta.n601_npc)} 个,ID = 10 亿 + 玩家 ID,建号时系统自动生成);时间都是中国时间。${V ? '「获客与进入」等页的客户端数据来自埋点,只有同意采集的玩家才上报,人数是下限。' : ''}</div>`;
+  const sBanner = `<div class="banner">${segTxt ? `<b>${esc(segTxt)}</b>两个 App 合计、今天实时、埋点数据质量仍是全部玩家。<br>` : ''}601 是新版内测服,口径和其他页不同:<b>活跃</b>用每日任务、签到、付款、登录等痕迹代替(新版不写老版登录日志,会漏掉什么都没留下的人);<b>充值</b>:Google / Apple 订单按 New Era 支付表判断到账(商店确认扣款、奖励已发放;商店测试购买和退款已剔除),PayerMax 网页支付没有到账状态记录,按下单计入收入(渠道表和订单分层里单列);` +
+    `金额按商品美元标价,不是实际扣款(玩家按当地货币付款,含税或区域定价会有差异),也没有扣平台分成。只统计 ${esc(N.start)} 内测开始后注册的角色,已去掉测试号和系统 NPC 城(${fi(D.meta.n601_npc)} 个,ID = 10 亿 + 玩家 ID,建号时系统自动生成);时间都是中国时间。${V ? '「获客与进入」等页的客户端数据来自埋点,只有同意采集的玩家才上报,人数是下限。' : ''}</div>`;
   const VS = V ? V.startup.total : null, VU = V ? V.sessions.user_day : null, VC = V ? V.coverage.filter(x => x.act).slice(-1)[0] : null;
   // 2026-11-04 601 按玩家旅程重排(用户确认):关键数字按页拆开
   const KC = {
@@ -676,7 +677,7 @@ function n601Page(part){
     act: kpiCard({label:`活跃 · ${WL}`, val:fi(WN.act), lines:[`按人去重;其中老服账号 ${fi(WN.act_old)} · 单日峰值 ${fi(k.act_peak)}`, trendL(r => r.act_old + r.act_new).replace(/近 7 天 [^·]+ · 前 7 天 [^<(]+(\([^)]*\))?/, '每天活跃')]}),
     d1: kpiCard({label:'D1 留存(全部内测期间)', val:fp(R.all.d1.rate,0), lines:[`${R.all.d1.n}/${R.all.d1.base} 人`, `D7 ${fp(R.all.d7.rate,0)}(${R.all.d7.n}/${R.all.d7.base})`]}),
     newdev: kpiCard({label:'新用户(全新设备)', val:fi((N.origin||[]).find(o => o.key==='new')?.n), lines:[`其余为回流用户或无法判断`, `见「用户来源」`]}),
-    pay: kpiCard({label:`收入 · ${WL}`, val:fm(WN.paid_usd,2), lines:[`其中 PayerMax ${fm((WN.by_channel||[]).filter(c => c.ch.startsWith('PayerMax')).reduce((a, c) => a + (c.paid_usd || 0), 0), 2)}(网页支付,按下单计入)`, trendL(r => r.paid_usd, true), `${fi(WN.payers)} 人 · ${fi(WN.orders)} 笔`, (WN.by_channel||[]).map(c => `${esc(c.ch)} ${fm(c.usd)}`).join(' · ') || '无订单']}),
+    pay: kpiCard({label:`收入 · ${WL}`, val:fm(WN.paid_usd,2), lines:['按商品美元标价,不是实际扣款', `其中 PayerMax ${fm((WN.by_channel||[]).filter(c => c.ch.startsWith('PayerMax')).reduce((a, c) => a + (c.paid_usd || 0), 0), 2)}(网页支付,按下单计入)`, trendL(r => r.paid_usd, true), `${fi(WN.payers)} 人 · ${fi(WN.orders)} 笔`, (WN.by_channel||[]).map(c => `${esc(c.ch)} ${fm(c.usd)}`).join(' · ') || '无订单']}),
     payrate: kpiCard({label:`付费人数占活跃 · ${WL}`, val:fp(WN.act ? WN.payers / WN.act : null), lines:[`${fi(WN.payers)}/${fi(WN.act)} 人`]}),
     startup: V ? kpiCard({label:'启动到登录成功(按安装)', val:fp(VS.resources ? VS.ready / VS.resources : null, 0), lines:[`${fi(VS.ready)}/${fi(VS.resources)} 个安装`, `启动失败后没登录上 ${fi(VS.failed_never_ready)} 个`]}) : '',
     playtime: V ? kpiCard({label:'每人每天游戏时长', val:VU.min_p50 != null ? VU.min_p50 + ' 分钟' : '—', lines:[`中位数;四分之一的人超过 ${VU.min_p75} 分钟`, `每人每天会话中位数 ${VU.sess_p50} 次`]}) : '',
@@ -819,7 +820,7 @@ function n601Page(part){
   // 版本 / 投放 / 活动日历(2026-11-04):读趋势时当切点;趋势图上同样标出
   const thru = D.meta.data_through || '';
   const evState = (e) => !e.start ? '时间未定' : (e.end ? (thru >= e.end.slice(0,10) ? '已结束' : thru >= e.start.slice(0,10) ? '进行中' : '未开始') : (thru >= e.start.slice(0,10) ? '已发生' : '未到'));
-  const sCal = (D.n601_events || []).length ? `<h2>版本、投放与活动</h2><div class="card"><div class="sub">时间是中国 / 新加坡时间;状态按数据截至日 ${esc(thru)} 判断。活动开始后以数据为准核对是否真的开了。趋势图上:活动 = 浅金色底,发版和投放变化 = 虚线;挤在一起放不下名字时只标编号</div>
+  const sCal = (D.n601_events || []).length ? `<h2>版本、投放与活动</h2><div class="card"><div class="sub">时间是中国 / 新加坡时间;状态按数据截至日 ${esc(thru)} 判断。活动开始后以数据为准核对是否真的开了。趋势图上:活动 = 浅金色底,发版、投放、维护、道具发放等节点 = 虚线;挤在一起放不下名字时只标编号</div>
    <div class="tw"><table><thead><tr><th>编号</th><th>类型</th><th>名称</th><th>时间</th><th>状态</th><th>说明</th></tr></thead><tbody>${D.n601_events.map((e, n) => `<tr><td>#${n + 1}</td><td>${esc(e.kind)}</td><td class="l">${esc(e.name)}</td><td class="l">${e.start ? esc(e.start) + (e.end ? ' ~ ' + esc(e.end) : '') : '—'}</td><td>${evState(e)}</td><td class="l note">${esc(e.note || '')}</td></tr>`).join('')}</tbody></table></div></div>` : '';
   // 逐日趋势(2026-11-05,老板要求):核心指标每天一张小图,共用日期轴,从内测开始,不随时间筛选;版本和活动标在图上
   const VT = V;
@@ -830,7 +831,7 @@ function n601Page(part){
    <div class="card"><h3>新建角色</h3><div class="sub">按注册日;广告安装 = 埋点来源是 Facebook / Instagram、没有广告 ID 的新号 ${dimSeg('c-trreg', ['合计', '来源', '平台', '国家'])}</div><div class="chart" style="height:180px"><canvas id="c-trreg"></canvas></div></div>
    <div class="card"><h3>活跃(活跃痕迹)</h3><div class="sub">当天有任务、签到、付款、登录等痕迹的人 ${dimSeg('c-tract', ['合计', '来源', '平台', '国家'])}</div><div class="chart" style="height:180px"><canvas id="c-tract"></canvas></div></div>
    <div class="card"><h3>D1 留存 · 按注册日</h3><div class="sub">只画已满 1 天的注册日;每天人数少,单日波动大,悬停看分子分母</div><div class="chart" style="height:180px"><canvas id="c-trd1"></canvas></div></div>
-   <div class="card"><h3>充值:收入 / 未确认</h3><div class="sub">美元;收入 = 商店确认到账 + PayerMax(按下单计入);未确认 = 有订单、商店还没确认;按维度拆时只看收入 ${dimSeg('c-trrev', ['合计', '渠道', '平台', '国家'])}</div><div class="chart" style="height:180px"><canvas id="c-trrev"></canvas></div></div>
+   <div class="card"><h3>充值:收入 / 未确认</h3><div class="sub">美元,按商品标价(不是实际扣款);收入 = 商店确认到账 + PayerMax(按下单计入);未确认 = 有订单、商店还没确认;按维度拆时只看收入 ${dimSeg('c-trrev', ['合计', '渠道', '平台', '国家'])}</div><div class="chart" style="height:180px"><canvas id="c-trrev"></canvas></div></div>
    <div class="card"><h3>付费人数</h3><div class="sub">有计入收入订单的人 / 下过单的人</div><div class="chart" style="height:180px"><canvas id="c-trpay"></canvas></div></div>
    <div class="card"><h3>每人每天游戏时长</h3><div class="sub">中位数,分钟;埋点(只覆盖同意采集的人,10-29 起)</div><div class="chart" style="height:180px"><canvas id="c-trmin"></canvas></div></div>
    <div class="card"><h3>启动到登录成功率</h3><div class="sub">按安装;当天开始启动的安装里登录成功的比例(埋点)</div><div class="chart" style="height:180px"><canvas id="c-trst"></canvas></div></div>
@@ -843,12 +844,12 @@ function n601Page(part){
    <details><summary class="link">按天明细</summary><div class="tw"><table><thead><tr><th>日期</th>${Object.keys(PBN).map(k => `<th>${esc(PBN[k])}</th>`).join('')}</tr></thead><tbody>${PBk.daily.map(x => `<tr><td>${md(x.d)}</td>${Object.keys(PBN).map(k => `<td>${fi(x[k] || 0)}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details></div>` : '';
   const PW = N.pay_weeks, CKD = (N.checkout || {}).daily || [];
   const sPayTrend = `<h2>付费趋势<span class="note" style="font-weight:400"> · 从内测开始,不随时间筛选</span></h2><div class="grid">
-   <div class="card"><h3>每日充值 · 按渠道</h3><div class="sub">美元;Google / Apple 为商店确认到账,PayerMax 按下单计入;很多天是 0,线 = 收入 7 天平均</div><div class="chart" style="height:200px"><canvas id="c-n6pw"></canvas></div></div>
+   <div class="card"><h3>每日充值 · 按渠道</h3><div class="sub">美元,按商品标价(不是实际扣款);Google / Apple 为商店确认到账,PayerMax 按下单计入;很多天是 0,线 = 收入 7 天平均</div><div class="chart" style="height:200px"><canvas id="c-n6pw"></canvas></div></div>
    <div class="card"><h3>每日订单 · 按状态</h3><div class="sub">笔数,和「订单状态分层」同口径、各层互斥;测试 = 测试号 + 测试卡 / 沙盒</div><div class="chart" style="height:200px"><canvas id="c-n6os"></canvas></div></div>
    ${CKD.length ? `<div class="card"><h3>点击付费 → 下单 → 到账 · 按天</h3><div class="sub">Google / Apple 内购;点击 = 在游戏里发起支付的人,下单 = 拿到订单号的人,到账 = 当天有已到账订单的人。PayerMax 网页支付不经过这一步</div><div class="chart" style="height:200px"><canvas id="c-n6ck"></canvas></div></div>` : ''}
   </div>`;
   const OL = N.order_layers;
-  const sLayers = OL ? `<div class="card"><h3>订单状态分层</h3><div class="sub">${esc(N.start)} 内测开始以来 601 的全部订单,按状态分层;<b>「商店确认到账」和「PayerMax 网页支付」计入收入</b>,其余各层单列。「—」= 没有这类记录的数据源,不是 0</div>
+  const sLayers = OL ? `<div class="card"><h3>订单状态分层</h3><div class="sub">${esc(N.start)} 内测开始以来 601 的全部订单,按状态分层;<b>「商店确认到账」和「PayerMax 网页支付」计入收入</b>,其余各层单列。金额按商品美元标价,不是实际扣款。「—」= 没有这类记录的数据源,不是 0</div>
    <div class="tw"><table><thead><tr><th>状态</th><th>笔数</th><th>金额</th><th>人数</th><th>计入收入</th><th>说明</th></tr></thead><tbody>${OL.map(x => `<tr${x.counted ? ' style="font-weight:600"' : ''}><td class="l">${esc(x.name)}</td><td>${x.orders == null ? '—' : fi(x.orders)}</td><td>${x.usd == null ? '—' : fm(x.usd, 2)}</td><td>${x.users == null ? '—' : fi(x.users)}</td><td>${x.counted ? '是' : '否'}</td><td class="l note">${esc(x.note)}</td></tr>`).join('')}</tbody></table></div></div>` : '';
   const RV = N.reg_versions;
   const sRegVer = RV && RV.length ? `<h2>建号版本<span class="note" style="font-weight:400"> · 不随时间筛选</span></h2><div class="card"><h3>新账号按建号时的版本</h3><div class="sub">建号版本 = 账号第一次注册时的客户端版本,看「哪个版本带来的新人」用它;顶部筛选的版本是最后登录版本,两者不同。旧号直接进的账号建号版本是老 App 的,不在表里。D1 按活跃痕迹,只算满 1 天的人</div>
@@ -1556,7 +1557,6 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--raw', default=str(HERE / 'raw_metrics.json'))
     ap.add_argument('--out', default=str(HERE / 'site' / 'index.html'))
-    ap.add_argument('--artifact', default=str(HERE / 'preview_artifact.html'))
     a = ap.parse_args()
     raw = json.loads(Path(a.raw).read_text())
     D = compute.build(raw)
@@ -1571,9 +1571,8 @@ def main():
     chartjs = (HERE / 'lib' / 'chart.umd.min.js').read_text()
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     Path(a.out).write_text(page(D, chartjs, True))
-    Path(a.artifact).write_text(page(D, chartjs, False))
     errs = D['meta']['compute_errors']
-    print(f'写出 {a.out} 和 {a.artifact};计算失败 {len(errs)} 项 {list(errs) if errs else ""}')
+    print(f'写出 {a.out};计算失败 {len(errs)} 项 {list(errs) if errs else ""}')
 
 
 if __name__ == '__main__':

@@ -18,7 +18,7 @@
 完整抓数后另存一份 601 每人等级快照到 data/n601_snapshots/(601 库只存当前等级,靠快照攒历史)。
 
 凭据:读环境变量 INVADER_DB_USER / INVADER_DB_PASSWORD,
-没有就读同目录 db_config.json({"user": ..., "password": ...},已在 .gitignore,勿提交)。
+都在 ~/.invader_env 里,不进仓库(2026-11-11 起不再用 db_config.json)。
 单张卡失败只记 errors、不中断,其余卡照常输出。
 
 卡片之后还有一步「大 R 姓名」(2026-10-21 加):名字在各服 invade_user_n{服}.dbo.player 里,
@@ -142,14 +142,11 @@ def inc_save_cache(card, rows, through, mode):
 LIGHT_FROM_SQL = ['Revenue_today', 'N601_players detail', 'N601_activity tasks day', 'N601_checkout', 'N601_order status']   # 轻量刷新时重跑的现有小卡;2026-11-05 加到账状态(几十行,几秒),今天的 601 订单要用它剔测试卡
 
 def creds():
+    """数据库账号只从环境变量读(~/.invader_env,定时脚本会先 source)。2026-11-11 去掉 db_config.json 备用副本,凭据只留一处。"""
     u, p = os.environ.get('INVADER_DB_USER'), os.environ.get('INVADER_DB_PASSWORD')
     if u and p:
         return u, p
-    cfg = HERE / 'db_config.json'
-    if cfg.exists():
-        c = json.loads(cfg.read_text())
-        return c['user'], c['password']
-    raise SystemExit('缺少数据库凭据:设置 INVADER_DB_USER / INVADER_DB_PASSWORD,或创建 db_config.json')
+    raise SystemExit('缺少数据库凭据:先 source ~/.invader_env(设置 INVADER_DB_USER / INVADER_DB_PASSWORD)')
 
 def connect(kind, user, pwd):
     if kind == 'rs':   # 2026-11-03:埋点数仓 Redshift(ods.invader_events),凭据在 ~/.invader_env 的 INVADER_RS_*,只读会话

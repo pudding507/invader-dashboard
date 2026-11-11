@@ -1434,18 +1434,25 @@ def _carnival_weeks():
     return out
 N601_EVENTS = [
     {'kind': '投放', 'name': '新 App 停投(约)', 'start': '2026-10-24', 'end': None, 'note': '用户口述,日期是大约;老 App 一直在投'},
-    {'kind': '版本', 'name': 'B72(2.4.0053)发版', 'start': '2026-11-04', 'end': None, 'note': '依赖服务端构建 56;带 event_uuid、install_referrer 等新字段'},
+    {'kind': '版本', 'name': 'B72(2.4.0053)发版', 'start': '2026-11-04', 'end': None, 'note': '依赖服务端构建 56;带 event_uuid、install_referrer 等新字段;修复 Android Meta Activation 漏报(研发周报 11-02~06)'},
     {'kind': '投放', 'name': '601 重新开投', 'start': '2026-11-04', 'end': None, 'note': '用户口述'},
     {'kind': '活动', 'name': '消费嘉年华', 'start': '2026-11-06 05:00', 'end': '2026-12-31', 'windows': _carnival_weeks(), 'note': '每周五 05:00 至下周三 05:00,持续到 12 月'},
     {'kind': '活动', 'name': '充值返利(百分百分红)', 'start': '2026-11-06 05:00', 'end': '2026-11-07 05:00', 'note': '只开这一次'},
     {'kind': '活动', 'name': '英雄升级', 'start': '2026-11-14 03:00', 'end': '2027-01-04 02:59', 'windows': [['2026-11-14 03:00', '2026-11-21 02:59']], 'note': '第一期 11-14 03:00 ~ 11-21 02:59,之后每 11 天一期'},
-    {'kind': '道具', 'name': '限时票 1,500 张(5 位指定玩家)', 'start': None, 'end': None, 'note': '7 天有效,需单独发放,发放时间未定;读券数据时单列'},
+    # 2026-11-06 研发周报(11-02~11-06)补入的生产节点,时间按周报 UTC 换成中国时间;只放会影响数据读数的事
+    {'kind': '道具', 'name': '限时票 7 人 × 1,500 张', 'start': '2026-11-04 14:17', 'end': None, 'note': '共 10,500 张,7 天有效,11-11 14:17 到期;读券数据时单列'},
+    {'kind': '道具', 'name': '限时票追加 2 人 × 1,500 张', 'start': '2026-11-05 17:26', 'end': None, 'note': '共 3,000 张,11-12 17:26 到期'},
+    {'kind': '运营', 'name': '阿语系统邮件 277 人', 'start': '2026-11-05', 'end': None, 'note': '只有文字,没有附带道具'},
+    {'kind': '维护', 'name': 'B76 生产维护(停服)', 'start': '2026-11-06', 'end': None, 'note': '服务端构建 90:新手新流程、全员充值返钻、商城自动排期上线;停服期间没有数据'},
+    {'kind': '版本', 'name': 'B77(2.4.0058)发版', 'start': '2026-11-06', 'end': None, 'note': '带新手新流程(两场教学战斗 + 升城 + 训练,引导步骤编号改为 11001 起);修复首次登录要先开 Account、宠物入口误报未开放'},
+    {'kind': '支付', 'name': 'PayerMax 网页恢复查询 601 角色', 'start': '2026-11-06', 'end': None, 'note': '服务端构建 94;网页能查角色、显示 8 档商品;真实付款到账闭环仍在核验'},
+    {'kind': '商城', 'name': '商城自动排期首次开期', 'start': '2026-11-07 05:00', 'end': None, 'note': '现金限时礼包、日惊喜、周 / 月卡、临时钻石商店;常规钻石商店 55 款 11-07 14:00 首次销售'},
 ]
 N6_COUNTED = ['paid', 'payermax']   # 2026-11-06 计入收入的订单状态:商店确认到账 + PayerMax(按下单计入)
 N6_WINDOWS = (1, 0)                    # 601 时间筛选:近 1 天 = 数据截至日全天(中国时间);0 = 内测以来。2026-11-05 用户:老板看趋势,去掉近 7 / 14 / 30 天
 N6_EV_WINDOWS = (0,)                   # 埋点块只算内测以来(趋势和表都看全部期间)
-# 2026-10-28 排除名单改为读 data/exclusions.json(所有报表共用一份);文件缺失或损坏时退回下面这份测试号
-EXCLUSIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'exclusions.json')
+# 2026-10-28 排除名单改为读统一文件(所有报表共用一份);文件缺失或损坏时退回下面这份测试号。2026-11-11 从 data/ 移到 config/(进仓库,别的机器部署也能拿到)
+EXCLUSIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config', 'exclusions.json')
 N601_TEST_IDS_FALLBACK = {2116084, 2116101, 2116102, 2116103, 2116104, 2116105, 2116106, 2116107, 2116108, 2116131, 2116132}   # 2026-10-29 已确认测试账号 11 个(提审号 2 + InvTest001–008 + 原技术号)
 
 
@@ -2482,6 +2489,11 @@ def _ms_cn(x):
     return pd.to_datetime(pd.to_numeric(x, errors='coerce'), unit='ms') + pd.Timedelta(hours=8)
 
 
+# 2026-11-11 用户:以研发周报为准。研发周报(11-02~11-06)写的全员充值返钻停止新参与时间是 2027-11-06 21:00 UTC(= 中国时间 2027-11-07 05:00);
+# 库里排期结束时间是 2027-11-14 05:00。日历和活动表的结束时间用周报的,不再标「待核实」
+N6_ACT_END_OVERRIDE = {'充值双倍': ('2027-11-07 05:00', '结束时间按研发周报(停止新参与 2027-11-06 21:00 UTC);库里排期写的是 2027-11-14 05:00')}
+
+
 def n601_activity_events(c):
     """新活动排期(库里的 NewEraActivityPeriodV1)→ 日历和趋势图的活动条目。同一活动同一时段多个商品的(限时钻石商店)合并成一条。"""
     PR = pd.DataFrame(c.raw.get('N601_activity periods', []))
@@ -2491,8 +2503,10 @@ def n601_activity_events(c):
     for t_, g in PR.groupby('template', sort=False):
         nm = N6_ACT_NAME.get(t_, t_)
         wins = sorted({(o.strftime('%Y-%m-%d %H:%M'), c_.strftime('%Y-%m-%d %H:%M')) for o, c_ in zip(g.o, g.c)})
+        ov = N6_ACT_END_OVERRIDE.get(nm)
+        if ov: wins[-1] = (wins[-1][0], ov[0])
         out.append({'kind': '活动', 'name': nm, 'start': wins[0][0], 'end': wins[-1][1], 'windows': [list(w) for w in wins],
-                    'note': f"{len(wins)} 期" + (f",每期 {len(g) // len(wins)} 个商品" if len(g) > len(wins) else '') + f";库里排期(template = {t_})", 'from_db': True})
+                    'note': f"{len(wins)} 期" + (f",每期 {len(g) // len(wins)} 个商品" if len(g) > len(wins) else '') + f";库里排期(template = {t_})" + (';' + ov[1] if ov else ''), 'from_db': True})
     return sorted(out, key=lambda x: x['start'])
 
 
@@ -2554,8 +2568,8 @@ def n601_newtables(c):
             cc = CO[CO.period_key.isin(pk) & (CO.kind == 'contrib') & ~CO.monetId.isin(ex)] if len(CO) else pd.DataFrame()
             rw = CO[CO.period_key.isin(pk) & (CO.kind == 'reward') & ~CO.monetId.isin(ex)] if len(CO) else pd.DataFrame()
             cur = g[(g.o <= pd.Timestamp.now()) & (g.c > pd.Timestamp.now())]
-            rows.append({'name': N6_ACT_NAME.get(t_, t_), 'periods': int(g[['o', 'c']].drop_duplicates().shape[0]), 'first': g.o.min().strftime('%Y-%m-%d %H:%M'), 'last': g.c.max().strftime('%Y-%m-%d %H:%M'),
-                         'odd_end': bool(len(g[['o', 'c']].drop_duplicates()) == 1 and (g.c.max() - g.o.min()).days > 60),   # 只有一期却持续两个月以上
+            rows.append({'name': N6_ACT_NAME.get(t_, t_), 'periods': int(g[['o', 'c']].drop_duplicates().shape[0]), 'first': g.o.min().strftime('%Y-%m-%d %H:%M'), 'last': N6_ACT_END_OVERRIDE.get(N6_ACT_NAME.get(t_, t_), (g.c.max().strftime('%Y-%m-%d %H:%M'),))[0],
+                         'odd_end': bool(N6_ACT_NAME.get(t_, t_) not in N6_ACT_END_OVERRIDE and len(g[['o', 'c']].drop_duplicates()) == 1 and (g.c.max() - g.o.min()).days > 60),   # 只有一期却持续两个月以上
                          'now': '进行中' if len(cur) else ('已结束' if g.c.max() < pd.Timestamp.now() else '未开始'),
                          'users': int(cc.monetId.nunique()) if len(cc) else 0, 'points': float(cc.amount.sum()) if len(cc) else 0.0, 'rewards': int(len(rw))})
         out['activities'] = sorted(rows, key=lambda x: x['first'])
@@ -2978,8 +2992,8 @@ def revenue_by_function(c, days=90):
 
 
 # ---------------------------------------------------------------- 三张清单 / 当日指导卡 / 六个病(2026-10-29,需求第三节)
-# 规则生成,不调大模型。登记项和负责人标注在 data/issues.json;每天的清单快照在 data/issue_history.json(按数据截至日),用来标「新」和「关闭」
-ISSUES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'issues.json')
+# 规则生成,不调大模型。登记项和负责人标注在 config/issues.json(2026-11-11 从 data/ 移来,进仓库);每天的清单快照在 data/issue_history.json(按数据截至日),用来标「新」和「关闭」
+ISSUES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config', 'issues.json')
 ISSUE_HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'issue_history.json')
 SEV = {'高': 3, '中': 2, '低': 1}
 
