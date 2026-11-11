@@ -14,7 +14,7 @@ NODE_BIN="$(command -v node || true)"; [ -z "$NODE_BIN" ] && [ -x "$HOME/.local/
 echo "node: $NODE_BIN"; export PATH="$(dirname "$NODE_BIN"):$PATH"
 
 say "2/6 装 Python 库(装到当前用户,不动系统)和上传工具 wrangler"
-python3 -m pip install --user -q "pandas==2.3.3" "numpy==2.0.2" pymysql pymssql psycopg2-binary openpyxl
+python3 -m pip install --user -q "pandas==2.3.3" "numpy==2.0.2" "PyMySQL==1.2.0" "pymssql==2.4.5" "psycopg2-binary==2.9.12"
 (cd tools && npm ci --silent)
 
 say "3/6 凭据文件 ~/.invader_env"

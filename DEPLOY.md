@@ -13,6 +13,27 @@
 - 能访问外网(GitHub、Cloudflare、pypi、npm)。
 - 硬盘留 1 GB 以上(缓存和数据约 400 MB)。
 
+## 运行环境
+
+| 项目 | 最低版本 | 这台机器在用 | 说明 |
+|---|---|---|---|
+| Python | 3.9 | 3.9.6(macOS 自带) | 建议 3.9–3.12;3.13 以上要把 numpy 换成 2.1 以上 |
+| Node | 16.17 | 20.18 | 只用来跑上传工具 wrangler 3.80.0 |
+
+Python 库(setup.sh 按下面的版本装):
+
+| 库 | 版本 | 用途 |
+|---|---|---|
+| pandas | 2.3.3 | 计算 |
+| numpy | 2.0.2 | 计算 |
+| PyMySQL | 1.2.0 | 连 Log 库(MySQL 5.6) |
+| pymssql | 2.4.5 | 连生产库(SQL Server 2005,必须 `tds_version='7.0'`) |
+| psycopg2-binary | 2.9.12 | 连 Redshift |
+
+其余都是 Python 标准库。**不用浏览器、不用无头浏览器**:页面是 Python 拼出来的 HTML 文件,图表在看的人的浏览器里画。
+
+和 Mac 绑定的只有三处,换 Windows / Linux 时要改:定时任务(launchd → 任务计划程序 / cron)、刷新脚本里检查端口的 `nc -z -G`(Linux 上写法不同)、Tunnelblick(Mac 专用;其他系统用 OpenVPN,同一份配置文件)。
+
 ## 部署步骤
 
 1. 取代码:`git clone <仓库地址> ~/DataGripProjects/invader-dashboard`(仓库迁到公司 GitHub 后用新地址)。
